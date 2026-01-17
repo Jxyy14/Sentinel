@@ -189,12 +189,58 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS incidents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    type TEXT NOT NULL,
+    severity TEXT DEFAULT 'medium',
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'active',
+    reported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    verified INTEGER DEFAULT 0,
+    upvotes INTEGER DEFAULT 0,
+    downvotes INTEGER DEFAULT 0,
+    address TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS incident_votes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    incident_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    vote_type TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(incident_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS historical_incident_patterns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    radius_meters INTEGER DEFAULT 500,
+    hour_of_day INTEGER,
+    day_of_week INTEGER,
+    incident_count INTEGER DEFAULT 0,
+    avg_severity REAL DEFAULT 0,
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id);
   CREATE INDEX IF NOT EXISTS idx_recordings_user ON recordings(user_id);
   CREATE INDEX IF NOT EXISTS idx_stream_sessions_user ON stream_sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_location_history_user ON location_history(user_id);
   CREATE INDEX IF NOT EXISTS idx_safe_locations_user ON safe_locations(user_id);
   CREATE INDEX IF NOT EXISTS idx_location_shares_code ON location_shares(share_code);
+  CREATE INDEX IF NOT EXISTS idx_incidents_location ON incidents(latitude, longitude);
+  CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
+  CREATE INDEX IF NOT EXISTS idx_incidents_time ON incidents(reported_at);
+  CREATE INDEX IF NOT EXISTS idx_historical_patterns_location ON historical_incident_patterns(latitude, longitude);
 `)
 
 export default db

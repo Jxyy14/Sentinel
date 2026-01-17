@@ -10,6 +10,7 @@ import recordingsRoutes from './routes/recordings.js'
 import streamRoutes from './routes/stream.js'
 import locationRoutes from './routes/location.js'
 import medicalRoutes from './routes/medical.js'
+import incidentsRoutes from './routes/incidents.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -37,6 +38,7 @@ app.use('/api/recordings', recordingsRoutes)
 app.use('/api/stream', streamRoutes)
 app.use('/api/location', locationRoutes)
 app.use('/api/medical', medicalRoutes)
+app.use('/api/incidents', incidentsRoutes)
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

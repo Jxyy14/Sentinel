@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Shield, Radio, LogOut, PhoneCall, Clock, Heart, Eye,
   Zap, Cloud, MapPin, Bell, Users, Video, Vibrate, Volume2, AlertTriangle,
-  Navigation, Phone, EyeOff
+  Navigation, Phone, EyeOff, Map
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
@@ -13,7 +13,7 @@ import './HomePage.css'
 
 const quickActions = [
   { icon: Navigation, label: 'Trip', path: '/trip' },
-  { icon: PhoneCall, label: 'Fake Call', path: '/safety?tab=fakecall' },
+  { icon: Map, label: 'Incidents', path: '/incidents' },
   { icon: Clock, label: 'Check-In', path: '/safety?tab=checkin' },
   { icon: Heart, label: 'Medical', path: '/medical' }
 ]
