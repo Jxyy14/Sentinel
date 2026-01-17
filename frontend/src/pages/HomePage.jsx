@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Shield, Radio, LogOut, PhoneCall, Clock, Heart, Eye,
   Zap, Cloud, MapPin, Bell, Users, Video, Vibrate, Volume2, AlertTriangle,
-  Navigation, Phone, EyeOff
+  Navigation, Phone, EyeOff, Map, Activity, History, ChevronRight
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
@@ -288,6 +288,51 @@ export default function HomePage() {
       <div className="tip-banner">
         <AlertTriangle size={18} />
         <span>Pro tip: Add multiple emergency contacts for maximum safety coverage</span>
+      </div>
+
+      {/* Safety Map Section - New Feature */}
+      <div className="safety-map-section">
+        <div className="section-header">
+          <Map size={22} />
+          <h2>SAFETY MAP</h2>
+        </div>
+        <p className="section-desc">
+          View nearby incidents, get real-time safety scores, and understand risk patterns in your area.
+        </p>
+        <button className="safety-map-card" onClick={() => navigate('/incident-map')}>
+          <div className="map-preview">
+            <div className="map-grid">
+              <div className="grid-line horizontal" />
+              <div className="grid-line horizontal" style={{ top: '50%' }} />
+              <div className="grid-line vertical" />
+              <div className="grid-line vertical" style={{ left: '50%' }} />
+              <div className="map-marker user" />
+              <div className="map-marker incident" style={{ top: '25%', left: '65%' }} />
+              <div className="map-marker incident" style={{ top: '60%', left: '30%' }} />
+              <div className="map-marker incident" style={{ top: '40%', left: '80%' }} />
+            </div>
+          </div>
+          <div className="map-info">
+            <div className="map-features">
+              <div className="feature-item">
+                <Activity size={16} />
+                <span>Live Incidents</span>
+              </div>
+              <div className="feature-item">
+                <Shield size={16} />
+                <span>Safety Score</span>
+              </div>
+              <div className="feature-item">
+                <History size={16} />
+                <span>Risk Patterns</span>
+              </div>
+            </div>
+            <div className="map-cta">
+              <span>View Safety Map</span>
+              <ChevronRight size={18} />
+            </div>
+          </div>
+        </button>
       </div>
     </div>
   )

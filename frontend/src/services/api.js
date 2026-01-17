@@ -223,6 +223,46 @@ const api = {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(info)
+    }).then(handleResponse),
+
+  // Incidents API
+  getNearbyIncidents: (latitude, longitude, radius = 5) =>
+    fetch(`${API_URL}/incidents/nearby?latitude=${latitude}&longitude=${longitude}&radius=${radius}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  getIncidents: (page = 1, limit = 50, status = 'active') =>
+    fetch(`${API_URL}/incidents?page=${page}&limit=${limit}&status=${status}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  reportIncident: (incident) =>
+    fetch(`${API_URL}/incidents`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(incident)
+    }).then(handleResponse),
+
+  updateIncident: (id, data) =>
+    fetch(`${API_URL}/incidents/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    }).then(handleResponse),
+
+  getSafetyScore: (latitude, longitude) =>
+    fetch(`${API_URL}/incidents/safety-score?latitude=${latitude}&longitude=${longitude}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  getHistoricalData: (latitude, longitude, radius = 1) =>
+    fetch(`${API_URL}/incidents/historical?latitude=${latitude}&longitude=${longitude}&radius=${radius}`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
+  getIncidentTypes: () =>
+    fetch(`${API_URL}/incidents/types`, {
+      headers: getHeaders()
     }).then(handleResponse)
 }
 
