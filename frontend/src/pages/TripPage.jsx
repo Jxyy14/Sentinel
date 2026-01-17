@@ -26,8 +26,8 @@ export default function TripPage() {
     const [bufferMinutes, setBufferMinutes] = useState(10)
     const [showCustomExpected, setShowCustomExpected] = useState(false)
     const [showCustomBuffer, setShowCustomBuffer] = useState(false)
-    const [customExpected, setCustomExpected] = useState('')
-    const [customBuffer, setCustomBuffer] = useState('')
+    const [customExpected, setCustomExpected] = useState({ minutes: '', seconds: '' })
+    const [customBuffer, setCustomBuffer] = useState({ minutes: '', seconds: '' })
 
     useEffect(() => {
         loadData()
@@ -89,7 +89,7 @@ export default function TripPage() {
                     )
                     const geoData = await geoResponse.json()
                     if (geoData.display_name) address = geoData.display_name
-                } catch (e) {}
+                } catch (e) { }
                 location = { lat, lng, address }
             } catch (e) {
                 location = { address: 'Location unknown' }
@@ -141,8 +141,8 @@ export default function TripPage() {
         setBufferMinutes(10)
         setShowCustomExpected(false)
         setShowCustomBuffer(false)
-        setCustomExpected('')
-        setCustomBuffer('')
+        setCustomExpected({ minutes: '', seconds: '' })
+        setCustomBuffer({ minutes: '', seconds: '' })
     }
 
     const scheduleAlerts = (trip) => {
@@ -332,9 +332,6 @@ export default function TripPage() {
                                 className={`option-btn custom ${showCustomExpected ? 'active' : ''}`}
                                 onClick={() => {
                                     setShowCustomExpected(true)
-                                    if (customExpected) {
-                                        setExpectedMinutes(parseInt(customExpected) || 30)
-                                    }
                                 }}
                             >
                                 Custom
@@ -342,23 +339,44 @@ export default function TripPage() {
                         </div>
                         {showCustomExpected && (
                             <div className="custom-input-group">
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="1440"
-                                    placeholder="Minutes"
-                                    value={customExpected}
-                                    onChange={(e) => {
-                                        const val = e.target.value
-                                        setCustomExpected(val)
-                                        const minutes = parseInt(val) || 0
-                                        if (minutes > 0) {
-                                            setExpectedMinutes(minutes)
-                                        }
-                                    }}
-                                    className="custom-time-input"
-                                />
-                                <span className="input-hint">minutes (1-1440)</span>
+                                <div className="time-inputs-row">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="1440"
+                                        placeholder="Min"
+                                        value={customExpected.minutes}
+                                        onChange={(e) => {
+                                            const mins = parseInt(e.target.value) || 0
+                                            setCustomExpected({ ...customExpected, minutes: e.target.value })
+                                            const secs = parseInt(customExpected.seconds) || 0
+                                            const totalMins = mins + secs / 60
+                                            if (totalMins > 0) {
+                                                setExpectedMinutes(totalMins)
+                                            }
+                                        }}
+                                        className="custom-time-input"
+                                    />
+                                    <span className="time-separator">:</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="59"
+                                        placeholder="Sec"
+                                        value={customExpected.seconds}
+                                        onChange={(e) => {
+                                            const secs = Math.min(59, parseInt(e.target.value) || 0)
+                                            setCustomExpected({ ...customExpected, seconds: e.target.value })
+                                            const mins = parseInt(customExpected.minutes) || 0
+                                            const totalMins = mins + secs / 60
+                                            if (totalMins > 0) {
+                                                setExpectedMinutes(totalMins)
+                                            }
+                                        }}
+                                        className="custom-time-input"
+                                    />
+                                </div>
+                                <span className="input-hint">minutes : seconds</span>
                             </div>
                         )}
                     </div>
@@ -382,9 +400,6 @@ export default function TripPage() {
                                 className={`option-btn custom ${showCustomBuffer ? 'active' : ''}`}
                                 onClick={() => {
                                     setShowCustomBuffer(true)
-                                    if (customBuffer) {
-                                        setBufferMinutes(parseInt(customBuffer) || 10)
-                                    }
                                 }}
                             >
                                 Custom
@@ -392,23 +407,44 @@ export default function TripPage() {
                         </div>
                         {showCustomBuffer && (
                             <div className="custom-input-group">
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="120"
-                                    placeholder="Minutes"
-                                    value={customBuffer}
-                                    onChange={(e) => {
-                                        const val = e.target.value
-                                        setCustomBuffer(val)
-                                        const minutes = parseInt(val) || 0
-                                        if (minutes > 0) {
-                                            setBufferMinutes(minutes)
-                                        }
-                                    }}
-                                    className="custom-time-input"
-                                />
-                                <span className="input-hint">minutes (1-120)</span>
+                                <div className="time-inputs-row">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="120"
+                                        placeholder="Min"
+                                        value={customBuffer.minutes}
+                                        onChange={(e) => {
+                                            const mins = parseInt(e.target.value) || 0
+                                            setCustomBuffer({ ...customBuffer, minutes: e.target.value })
+                                            const secs = parseInt(customBuffer.seconds) || 0
+                                            const totalMins = mins + secs / 60
+                                            if (totalMins > 0) {
+                                                setBufferMinutes(totalMins)
+                                            }
+                                        }}
+                                        className="custom-time-input"
+                                    />
+                                    <span className="time-separator">:</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="59"
+                                        placeholder="Sec"
+                                        value={customBuffer.seconds}
+                                        onChange={(e) => {
+                                            const secs = Math.min(59, parseInt(e.target.value) || 0)
+                                            setCustomBuffer({ ...customBuffer, seconds: e.target.value })
+                                            const mins = parseInt(customBuffer.minutes) || 0
+                                            const totalMins = mins + secs / 60
+                                            if (totalMins > 0) {
+                                                setBufferMinutes(totalMins)
+                                            }
+                                        }}
+                                        className="custom-time-input"
+                                    />
+                                </div>
+                                <span className="input-hint">minutes : seconds</span>
                             </div>
                         )}
                     </div>

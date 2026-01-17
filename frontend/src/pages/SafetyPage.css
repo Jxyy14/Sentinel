@@ -423,6 +423,48 @@
   margin-left: 4px;
 }
 
+.time-inputs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-inputs-row .custom-time-input {
+  flex: 1;
+  text-align: center;
+}
+
+.time-separator {
+  font-size: 1.25rem;
+  color: var(--text-muted);
+  font-weight: bold;
+}
+
+.contact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.contact-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.contact-item.selected {
+  border-color: var(--safe-primary);
+  background: rgba(0, 230, 118, 0.1);
+  color: var(--safe-primary);
+}
+
 .modal-actions {
   display: flex;
   gap: 12px;

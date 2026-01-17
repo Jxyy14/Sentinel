@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { Conversation } from '@11labs/client'
 import { callSafetyContacts, CallReasons } from '../services/safetyContactCalls'
+import api from '../services/api'
 import './SafetyPage.css'
 
 const tabs = [
@@ -54,9 +55,13 @@ export default function SafetyPage() {
   const [newCheckIn, setNewCheckIn] = useState({ name: '', duration: 30, escalationDelay: 5 })
   const [showCustomDuration, setShowCustomDuration] = useState(false)
   const [showCustomEscalation, setShowCustomEscalation] = useState(false)
-  const [customDuration, setCustomDuration] = useState('')
-  const [customEscalation, setCustomEscalation] = useState('')
+  const [customDuration, setCustomDuration] = useState({ minutes: '', seconds: '' })
+  const [customEscalation, setCustomEscalation] = useState({ minutes: '', seconds: '' })
   const [useAiVoice, setUseAiVoice] = useState(false)
+  // Contact selection for notifications
+  const [contacts, setContacts] = useState([])
+  const [selectedContacts, setSelectedContacts] = useState([])
+  const [, forceUpdate] = useState(0) // For timer re-render
   // Default to the Sentinel Public Agent
   const [agentId, setAgentId] = useState('agent_7401kf5b6y9je06v6r5vzqfbrp3r')
   const [conversation, setConversation] = useState(null)
@@ -64,10 +69,30 @@ export default function SafetyPage() {
 
   useEffect(() => {
     loadActiveCheckIns()
+    loadContacts()
     return () => {
       if (conversation) conversation.endSession()
     }
   }, [])
+
+  // Timer refresh interval for real-time countdown updates
+  useEffect(() => {
+    if (activeCheckIns.length > 0) {
+      const interval = setInterval(() => {
+        forceUpdate(n => n + 1)
+      }, 1000)
+      return () => clearInterval(interval)
+    }
+  }, [activeCheckIns.length])
+
+  const loadContacts = async () => {
+    try {
+      const res = await api.getContacts()
+      setContacts(res.contacts || [])
+    } catch (err) {
+      console.error('Failed to load contacts:', err)
+    }
+  }
 
   useEffect(() => {
     let interval
@@ -106,7 +131,7 @@ export default function SafetyPage() {
         return escalationTime > new Date()
       })
       setActiveCheckIns(checkIns)
-      
+
       // Schedule alerts for all active check-ins
       checkIns.forEach(checkIn => {
         scheduleCheckInAlert(checkIn)
@@ -190,7 +215,7 @@ export default function SafetyPage() {
     setActiveCheckIns(updated)
     localStorage.setItem('checkIns', JSON.stringify(updated))
     localStorage.setItem('activeCheckIn', JSON.stringify(checkIn))
-    
+
     // Schedule alert for when check-in expires
     scheduleCheckInAlert(checkIn)
   }
@@ -226,7 +251,7 @@ export default function SafetyPage() {
           )
           const geoData = await geoResponse.json()
           if (geoData.display_name) address = geoData.display_name
-        } catch (e) {}
+        } catch (e) { }
         location = { lat, lng, address }
       } catch (e) {
         location = { address: 'Location unknown' }
@@ -278,7 +303,7 @@ export default function SafetyPage() {
     localStorage.setItem('checkIns', JSON.stringify(updated))
     localStorage.setItem('activeCheckIn', JSON.stringify(checkIn))
     closeCheckInModal()
-    
+
     // Schedule alert for when check-in expires
     scheduleCheckInAlert(checkIn)
   }
@@ -556,9 +581,6 @@ export default function SafetyPage() {
                       className={`duration-btn custom ${showCustomDuration ? 'active' : ''}`}
                       onClick={() => {
                         setShowCustomDuration(true)
-                        if (customDuration) {
-                          setNewCheckIn({ ...newCheckIn, duration: parseInt(customDuration) || 30 })
-                        }
                       }}
                     >
                       Custom
@@ -566,23 +588,44 @@ export default function SafetyPage() {
                   </div>
                   {showCustomDuration && (
                     <div className="custom-input-group">
-                      <input
-                        type="number"
-                        min="1"
-                        max="1440"
-                        placeholder="Minutes"
-                        value={customDuration}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          setCustomDuration(val)
-                          const minutes = parseInt(val) || 0
-                          if (minutes > 0) {
-                            setNewCheckIn({ ...newCheckIn, duration: minutes })
-                          }
-                        }}
-                        className="custom-time-input"
-                      />
-                      <span className="input-hint">minutes (1-1440)</span>
+                      <div className="time-inputs-row">
+                        <input
+                          type="number"
+                          min="0"
+                          max="1440"
+                          placeholder="Min"
+                          value={customDuration.minutes}
+                          onChange={(e) => {
+                            const mins = parseInt(e.target.value) || 0
+                            setCustomDuration({ ...customDuration, minutes: e.target.value })
+                            const secs = parseInt(customDuration.seconds) || 0
+                            const totalMins = mins + secs / 60
+                            if (totalMins > 0) {
+                              setNewCheckIn({ ...newCheckIn, duration: totalMins })
+                            }
+                          }}
+                          className="custom-time-input"
+                        />
+                        <span className="time-separator">:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          placeholder="Sec"
+                          value={customDuration.seconds}
+                          onChange={(e) => {
+                            const secs = Math.min(59, parseInt(e.target.value) || 0)
+                            setCustomDuration({ ...customDuration, seconds: e.target.value })
+                            const mins = parseInt(customDuration.minutes) || 0
+                            const totalMins = mins + secs / 60
+                            if (totalMins > 0) {
+                              setNewCheckIn({ ...newCheckIn, duration: totalMins })
+                            }
+                          }}
+                          className="custom-time-input"
+                        />
+                      </div>
+                      <span className="input-hint">minutes : seconds</span>
                     </div>
                   )}
                 </div>
@@ -606,9 +649,6 @@ export default function SafetyPage() {
                       className={`duration-btn custom ${showCustomEscalation ? 'active' : ''}`}
                       onClick={() => {
                         setShowCustomEscalation(true)
-                        if (customEscalation) {
-                          setNewCheckIn({ ...newCheckIn, escalationDelay: parseInt(customEscalation) || 5 })
-                        }
                       }}
                     >
                       Custom
@@ -616,25 +656,72 @@ export default function SafetyPage() {
                   </div>
                   {showCustomEscalation && (
                     <div className="custom-input-group">
-                      <input
-                        type="number"
-                        min="1"
-                        max="120"
-                        placeholder="Minutes"
-                        value={customEscalation}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          setCustomEscalation(val)
-                          const minutes = parseInt(val) || 0
-                          if (minutes > 0) {
-                            setNewCheckIn({ ...newCheckIn, escalationDelay: minutes })
-                          }
-                        }}
-                        className="custom-time-input"
-                      />
-                      <span className="input-hint">minutes (1-120)</span>
+                      <div className="time-inputs-row">
+                        <input
+                          type="number"
+                          min="0"
+                          max="120"
+                          placeholder="Min"
+                          value={customEscalation.minutes}
+                          onChange={(e) => {
+                            const mins = parseInt(e.target.value) || 0
+                            setCustomEscalation({ ...customEscalation, minutes: e.target.value })
+                            const secs = parseInt(customEscalation.seconds) || 0
+                            const totalMins = mins + secs / 60
+                            if (totalMins > 0) {
+                              setNewCheckIn({ ...newCheckIn, escalationDelay: totalMins })
+                            }
+                          }}
+                          className="custom-time-input"
+                        />
+                        <span className="time-separator">:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          placeholder="Sec"
+                          value={customEscalation.seconds}
+                          onChange={(e) => {
+                            const secs = Math.min(59, parseInt(e.target.value) || 0)
+                            setCustomEscalation({ ...customEscalation, seconds: e.target.value })
+                            const mins = parseInt(customEscalation.minutes) || 0
+                            const totalMins = mins + secs / 60
+                            if (totalMins > 0) {
+                              setNewCheckIn({ ...newCheckIn, escalationDelay: totalMins })
+                            }
+                          }}
+                          className="custom-time-input"
+                        />
+                      </div>
+                      <span className="input-hint">minutes : seconds</span>
                     </div>
                   )}
+                </div>
+
+                <div className="form-group">
+                  <label className="label">Notify Contacts (on expiry)</label>
+                  <div className="contact-list">
+                    {contacts.length === 0 ? (
+                      <p className="text-muted">No contacts added yet. Add contacts in Settings.</p>
+                    ) : (
+                      contacts.map(contact => (
+                        <button
+                          key={contact.id}
+                          className={`contact-item ${selectedContacts.includes(contact.id) ? 'selected' : ''}`}
+                          onClick={() => {
+                            setSelectedContacts(prev =>
+                              prev.includes(contact.id)
+                                ? prev.filter(id => id !== contact.id)
+                                : [...prev, contact.id]
+                            )
+                          }}
+                        >
+                          <span>{contact.name}</span>
+                          {selectedContacts.includes(contact.id) && <Check size={16} />}
+                        </button>
+                      ))
+                    )}
+                  </div>
                 </div>
 
                 <div className="modal-actions">

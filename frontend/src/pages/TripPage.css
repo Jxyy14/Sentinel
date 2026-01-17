@@ -244,6 +244,23 @@
     margin-left: 4px;
 }
 
+.time-inputs-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.time-inputs-row .custom-time-input {
+    flex: 1;
+    text-align: center;
+}
+
+.time-separator {
+    font-size: 1.25rem;
+    color: var(--text-muted);
+    font-weight: bold;
+}
+
 .contact-list {
     display: flex;
     flex-direction: column;
