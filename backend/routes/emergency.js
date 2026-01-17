@@ -156,6 +156,64 @@ router.get('/tts/:callId/:textHash', async (req, res) => {
 // Store active emergency calls
 const activeEmergencyCalls = new Map()
 
+// Helper to analyze video frame with Gemini (good model)
+const analyzeVideoFrameWithGemini = async (videoFrame) => {
+  try {
+    if (!videoFrame) return null
+    
+    const { GoogleGenerativeAI } = await import('@google/generative-ai')
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+    
+    // Use good Gemini model for vision (gemini-2.5-flash is best for images)
+    const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro']
+    let analysis = null
+    
+    const imageData = videoFrame.replace(/^data:image\/\w+;base64,/, '')
+    
+    for (const modelName of visionModels) {
+      try {
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: {
+            maxOutputTokens: 100,
+            temperature: 0.1,  // Low temperature for factual descriptions
+          }
+        })
+        
+        const result = await model.generateContent([
+          {
+            text: `You are analyzing a live video frame for a 9111 emergency call. 
+ONLY describe what you can CLEARLY see. Do NOT make assumptions or guess.
+If the image is unclear, say "Image unclear".
+Describe: people visible, their actions, any objects, the setting. Be factual and brief (1-2 sentences).`
+          },
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: imageData
+            }
+          }
+        ])
+        
+        analysis = result.response.text().trim()
+        console.log(`[Video Analysis] ${modelName}:`, analysis.substring(0, 100))
+        break  // Success, exit loop
+      } catch (e) {
+        console.log(`[Video Analysis] ${modelName} failed:`, e.message.substring(0, 50))
+        if (!e.message.includes('429')) {
+          break // Not a rate limit error, don't try other models
+        }
+        // Rate limited, try next model
+      }
+    }
+    
+    return analysis
+  } catch (error) {
+    console.error('[Video Analysis] Error:', error.message)
+    return null
+  }
+}
+
 // Store active safety contact calls (separate from 9111 calls)
 const activeSafetyContactCalls = new Map()
 
@@ -502,20 +560,44 @@ router.post('/gather/:callId', async (req, res) => {
       timestamp: new Date().toISOString()
     })
 
+    // Detect if operator's question requires video analysis
+    const videoKeywords = ['see', 'surroundings', 'people', 'person', 'anyone', 'anybody', 'scene', 'visible', 'look', 'describe', 'what do you see', 'can you see', 'are there', 'who is', 'what\'s around', 'environment', 'setting', 'background', 'area', 'room', 'location', 'around them', 'near them']
+    const needsVideoAnalysis = videoKeywords.some(keyword => userInput.toLowerCase().includes(keyword))
+    
+    console.log(`[Gather] Question: "${userInput.substring(0, 100)}" | Needs video: ${needsVideoAnalysis}`)
+    
+    // Check if we need fresh video analysis (if question needs it and we don't have recent analysis)
+    const lastVideoUpdate = context.lastVideoUpdate ? new Date(context.lastVideoUpdate) : null
+    const videoAge = lastVideoUpdate ? (Date.now() - lastVideoUpdate.getTime()) / 1000 : Infinity
+    const videoIsStale = videoAge > 30 // Consider video stale if older than 30 seconds
+    
+    let videoAnalysisNeeded = needsVideoAnalysis && (!context.videoAnalysis || videoIsStale)
+    console.log(`[Gather] Video analysis needed: ${videoAnalysisNeeded} (has analysis: ${!!context.videoAnalysis}, age: ${videoAge.toFixed(1)}s)`)
+    
+    // If video analysis is needed, analyze video immediately with good Gemini model
+    let freshVideoAnalysis = null
+    if (videoAnalysisNeeded) {
+      // Check if we have a recent video frame (frontend sends it periodically)
+      // For now, we'll trigger analysis request - frontend should send frame when it detects "checking video" message
+      // We'll use existing video frame if available, or wait for next one
+      
+      // For immediate response, we'll say "checking" and analyze async
+      // But Twilio webhooks need immediate response, so we'll do it synchronously
+      // Note: This will add 2-3 seconds delay, but operator will understand
+      
+      // Return immediately with "checking" message if we need to analyze
+      // Frontend will send video frame via update-video when it detects this
+      // For now, let's do it synchronously - the delay is acceptable for accuracy
+    }
+
     // Generate AI response
     let aiResponse = "I understand. The emergency services have been notified with the caller's information."
+    let needsToAnalyzeVideo = false
     
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai')
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-      const model = genAI.getGenerativeModel({ 
-        model: 'gemma-3-4b-it',
-        generationConfig: {
-          maxOutputTokens: 50,
-          temperature: 0.3,
-        }
-      })
-
+      
       const callerInfo = `${context.userName} at ${context.location?.address || 'unknown location'}`
       
       // Build context string from user data
@@ -542,6 +624,53 @@ router.post('/gather/:callId', async (req, res) => {
       const endingPhrases = ['thank you', 'help is on the way', 'we are coming', 'assistance is coming', 'okay', 'ok', 'got it', 'understood', 'goodbye', 'bye']
       const isEnding = endingPhrases.some(phrase => userInput.toLowerCase().includes(phrase))
       
+      // If question needs video and we don't have fresh analysis, analyze video now
+      if (videoAnalysisNeeded) {
+        // Check if we have a recent video frame stored (from frontend updates)
+        const latestFrame = context.latestVideoFrame
+        const latestFrameTime = context.latestVideoFrameTime ? new Date(context.latestVideoFrameTime) : null
+        const frameAge = latestFrameTime ? (Date.now() - latestFrameTime.getTime()) / 1000 : Infinity
+        
+        // Check if we have a video frame (use even if slightly old - up to 15 seconds)
+        if (latestFrame && frameAge < 15) {
+          // We have a recent video frame - analyze it now synchronously (takes 2-3 seconds)
+          console.log(`[Gather] Analyzing video frame on-demand for question: "${userInput.substring(0, 50)}" (frame age: ${frameAge.toFixed(1)}s)`)
+          
+          try {
+            const videoAnalysis = await analyzeVideoFrameWithGemini(latestFrame)
+            
+            if (videoAnalysis) {
+              // Update context with fresh analysis
+              context.videoAnalysis = videoAnalysis
+              context.lastVideoUpdate = new Date().toISOString()
+              console.log(`[Gather] Video analysis complete: ${videoAnalysis.substring(0, 150)}`)
+            } else {
+              console.warn(`[Gather] Video analysis returned null/empty for question: "${userInput.substring(0, 50)}"`)
+              context.videoAnalysis = null // Clear if analysis failed
+            }
+          } catch (err) {
+            console.error(`[Gather] Video analysis failed:`, err.message, err.stack)
+            context.videoAnalysis = null // Clear if analysis failed
+            // Continue without video analysis - AI will say it can't see video
+          }
+          // Continue with response generation below using this fresh analysis
+        } else {
+          // No recent video frame - continue without video (AI will say it can't access video)
+          console.warn(`[Gather] No recent video frame available (age: ${frameAge.toFixed(1)}s, has frame: ${!!latestFrame}) for video question: "${userInput.substring(0, 50)}"`)
+          context.videoAnalysis = null // Clear stale analysis
+          // Continue with response generation - AI will say it can't access video right now
+        }
+      }
+      
+      // Use text-only model for quick responses (when video not needed)
+      const model = genAI.getGenerativeModel({ 
+        model: 'gemma-3-4b-it',
+        generationConfig: {
+          maxOutputTokens: 50,
+          temperature: 0.3,
+        }
+      })
+      
       let prompt
       if (isEnding) {
         prompt = `You are a 9111 AI assistant. The operator just said: "${userInput}"
@@ -552,20 +681,72 @@ Respond with a brief acknowledgment and end politely. One sentence only.
 Example: "Thank you. I will let them know help is on the way."
 You:`
       } else {
+        // Include video analysis if available and relevant
+        let videoContext = ''
+        // Note: justAnalyzedVideo will be checked after video analysis completes
+        
+        if (needsVideoAnalysis) {
+          if (context.videoAnalysis) {
+            // We have video analysis (just analyzed or from before)
+            videoContext = `\n\nLIVE VIDEO ANALYSIS: ${context.videoAnalysis}\n\nUse this EXACT video analysis to answer the operator's question about what you see. Be specific and factual based on what the video shows.`
+          } else {
+            // Video analysis failed or not available
+            videoContext = `\n\nThe operator asked about what's visible, but video analysis could not be completed. Say you cannot access the video feed right now.`
+          }
+        }
+        
+        let responseInstruction = ''
+        if (needsVideoAnalysis) {
+          if (context.videoAnalysis) {
+            // We have video analysis - MUST use it
+            responseInstruction = `You MUST use the video analysis above to answer. Start with "Let me check..." or "Looking at the video..." then describe what you see based on the video analysis. Be specific and factual. Include details from the video analysis.`
+          } else {
+            // Video analysis not available - be honest
+            responseInstruction = 'Say "I cannot access the video feed right now. Let me try again in a moment." Do NOT make up or guess what you see.'
+          }
+        } else {
+          responseInstruction = 'If you don\'t know something, say so.'
+        }
+        
         prompt = `You are a 9111 AI assistant speaking on behalf of ${callerInfo} who cannot talk.
-CONTEXT: ${contextInfo}
+CONTEXT: ${contextInfo}${videoContext}
 
-Answer the operator's question using this context. If you don't know something, say so.
-Be concise. One short sentence only.
+OPERATOR QUESTION: "${userInput}"
 
-Operator: ${userInput}
-You:`
+${videoAnalysisNeeded && context.videoAnalysis ? 'IMPORTANT: You just analyzed the video feed. Your response MUST include what you see in the video analysis above. Start with "Let me check..." or "Looking at the video..." then describe what you see based on the video analysis. Be specific and use the video analysis details.' : ''}
+
+${responseInstruction}
+Be concise and factual. One short sentence, but include specific details from the video if available.
+
+Respond now:`
       }
 
+      console.log(`[Gather] Generating response with prompt (first 300 chars):`, prompt.substring(0, 300))
       const result = await model.generateContent(prompt)
-      aiResponse = result.response.text().trim().split('\n')[0].substring(0, 200)
+      aiResponse = result.response.text().trim().split('\n')[0].substring(0, 250)
+      
+      // If we just analyzed video but response doesn't seem to use it, add it explicitly
+      const justAnalyzedVideo = videoAnalysisNeeded && context.videoAnalysis && context.lastVideoUpdate
+      if (justAnalyzedVideo && context.videoAnalysis) {
+        // Check if response actually uses the video analysis
+        const responseLower = aiResponse.toLowerCase()
+        const hasVideoKeywords = responseLower.includes('see') || responseLower.includes('check') || responseLower.includes('video') || responseLower.includes('visible') || responseLower.includes('look')
+        
+        if (!hasVideoKeywords || aiResponse.length < 20) {
+          console.warn(`[Gather] Response doesn't seem to include video analysis properly, adding it explicitly`)
+          // Fallback: Use video analysis directly
+          aiResponse = `Let me check the video... ${context.videoAnalysis.substring(0, 150)}`
+        }
+      }
+      
+      console.log(`[Gather] Generated response: ${aiResponse.substring(0, 150)}`)
     } catch (e) {
-      console.error('AI response generation failed:', e)
+      console.error('[Gather] AI response generation failed:', e.message, e.stack)
+      // Fallback response - use video analysis if available
+      if (needsVideoAnalysis && context.videoAnalysis) {
+        console.log(`[Gather] Using video analysis as fallback response`)
+        aiResponse = `Let me check the video... ${context.videoAnalysis.substring(0, 150)}`
+      }
     }
 
     // Add AI response to transcript
@@ -821,64 +1002,16 @@ router.post('/update-video', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'No video frame provided' })
     }
 
-    // Use GOOD Gemini model for vision (gemini-2.5-flash is best for images)
-    const { GoogleGenerativeAI } = await import('@google/generative-ai')
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+    // Store the video frame for on-demand analysis (only analyze when operator asks video questions)
+    // This saves API costs - analysis happens only when needed
+    callData.context.latestVideoFrame = videoFrame // Store frame for on-demand analysis
+    callData.context.latestVideoFrameTime = new Date().toISOString()
     
-    // Try gemini-2.5-flash first (best vision), fallback to others if rate limited
-    const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro']
+    console.log(`[Update Video] Stored video frame for call ${callData.callId}, timestamp: ${callData.context.latestVideoFrameTime}`)
+    
+    // Don't analyze automatically - only analyze on-demand when operator asks video questions
+    // Return success without analysis to save costs
     let analysis = null
-    
-    const imageData = videoFrame.replace(/^data:image\/\w+;base64,/, '')
-    
-    for (const modelName of visionModels) {
-      try {
-        const model = genAI.getGenerativeModel({ 
-          model: modelName,
-          generationConfig: {
-            maxOutputTokens: 100,
-            temperature: 0.1,  // Low temperature for factual descriptions
-          }
-        })
-        
-        const result = await model.generateContent([
-          {
-            text: `You are analyzing a live video frame for a 9111 emergency call. 
-ONLY describe what you can CLEARLY see. Do NOT make assumptions or guess.
-If the image is unclear, say "Image unclear".
-Describe: people visible, their actions, any objects, the setting. Be factual and brief (1-2 sentences).`
-          },
-          {
-            inlineData: {
-              mimeType: 'image/jpeg',
-              data: imageData
-            }
-          }
-        ])
-        
-        analysis = result.response.text().trim()
-        console.log(`Vision analysis with ${modelName}:`, analysis.substring(0, 100))
-        break  // Success, exit loop
-      } catch (e) {
-        console.log(`${modelName} failed:`, e.message.substring(0, 50))
-        if (!e.message.includes('429')) {
-          // Not a rate limit error, don't try other models
-          break
-        }
-        // Rate limited, try next model
-      }
-    }
-    
-    if (!analysis) {
-      return res.status(503).json({ 
-        error: 'Vision models unavailable', 
-        message: 'All Gemini vision models are rate limited. Try again later.' 
-      })
-    }
-    
-    // Update context with new analysis
-    callData.context.videoAnalysis = analysis
-    callData.context.lastVideoUpdate = new Date().toISOString()
 
     res.json({ 
       success: true, 

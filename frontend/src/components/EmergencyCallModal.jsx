@@ -42,10 +42,10 @@ export default function EmergencyCallModal({
         setCallDuration(d => d + 1)
       }, 1000)
 
-      // Video analysis every 30 seconds (using good Gemini model)
+      // Send video frame periodically (every 5 seconds) to keep a fresh frame available for on-demand analysis
       videoAnalysisRef.current = setInterval(() => {
-        captureAndAnalyzeVideo()
-      }, 30000) // 30 seconds - less frequent to avoid rate limits
+        captureAndAnalyzeVideo() // This sends frame to backend for storage (analyzed on-demand)
+      }, 5000) // 5 seconds - keep fresh frame available for on-demand analysis
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
@@ -100,7 +100,7 @@ export default function EmergencyCallModal({
     }
   }, [videoRef])
 
-  // Analyze current video frame using Gemini Vision
+  // Send video frame to backend (stored for on-demand analysis when operator asks video questions)
   const captureAndAnalyzeVideo = useCallback(async () => {
     if (callStatus !== 'active' || isAnalyzingVideo) return
 
@@ -109,21 +109,19 @@ export default function EmergencyCallModal({
 
     setIsAnalyzingVideo(true)
     try {
+      // Send frame to backend - it will store it and analyze on-demand when needed
       const result = await api.updateEmergencyVideo({ videoFrame: frame })
+      
+      // Backend will analyze automatically only if needed (on-demand), or just store frame
+      // Don't add to transcript here - analysis happens when operator asks video questions
       if (result.analysis) {
         setLastVideoAnalysis(result.analysis)
-        
-        // Add to transcript as system message
-        setTranscript(prev => [...prev, {
-          role: 'system',
-          content: `[Video] ${result.analysis}`,
-          timestamp: new Date().toISOString()
-        }])
+        // Don't add to transcript - let backend handle it when operator asks
       }
     } catch (e) {
       // Don't spam errors if rate limited
       if (!e.message?.includes('rate') && !e.message?.includes('503')) {
-        console.error('Video analysis error:', e)
+        console.error('Video frame update error:', e)
       }
     }
     setIsAnalyzingVideo(false)
