@@ -4,6 +4,7 @@ import {
   PhoneCall, Clock, Heart, AlertTriangle, Car, Home as HomeIcon,
   Briefcase, User, Timer, Plus, X, Check
 } from 'lucide-react'
+import { Conversation } from '@11labs/client'
 import './SafetyPage.css'
 
 const tabs = [
@@ -30,6 +31,7 @@ const checkInPresets = [
 ]
 
 const scheduleOptions = [
+  { label: '10s', value: 10 },
   { label: '30s', value: 30 },
   { label: '1m', value: 60 },
   { label: '2m', value: 120 },
@@ -49,15 +51,33 @@ export default function SafetyPage() {
   const [activeCheckIns, setActiveCheckIns] = useState([])
   const [showCreateCheckIn, setShowCreateCheckIn] = useState(false)
   const [newCheckIn, setNewCheckIn] = useState({ name: '', duration: 30, escalationDelay: 5 })
+  const [useAiVoice, setUseAiVoice] = useState(false)
+  // Default to the Sentinel Public Agent
+  const [agentId, setAgentId] = useState('agent_7401kf5b6y9je06v6r5vzqfbrp3r')
+  const [conversation, setConversation] = useState(null)
+  const [connectionStatus, setConnectionStatus] = useState('disconnected')
 
   useEffect(() => {
     loadActiveCheckIns()
+    return () => {
+      if (conversation) conversation.endSession()
+    }
   }, [])
 
   useEffect(() => {
     let interval
     if (callAnswered) {
       interval = setInterval(() => setCallTimer(t => t + 1), 1000)
+
+      if (useAiVoice && agentId) {
+        startConversation()
+      }
+    } else {
+      if (conversation) {
+        conversation.endSession()
+        setConversation(null)
+        setConnectionStatus('disconnected')
+      }
     }
     return () => clearInterval(interval)
   }, [callAnswered])
@@ -85,6 +105,30 @@ export default function SafetyPage() {
       navigate('/medical')
     } else {
       setActiveTab(tabId)
+    }
+  }
+
+  const startConversation = async () => {
+    try {
+      setConnectionStatus('connecting')
+      // Request microphone permission first
+      await navigator.mediaDevices.getUserMedia({ audio: true })
+
+      const conv = await Conversation.startSession({
+        agentId: agentId,
+        onModeChange: (mode) => setConnectionStatus(mode.mode === 'speaking' ? 'speaking' : 'listening'),
+        onStatusChange: (status) => console.log('Status:', status),
+        onError: (err) => {
+          console.error('Conversation error:', err)
+          setConnectionStatus('error')
+        }
+      })
+      setConversation(conv)
+      setConnectionStatus('connected')
+    } catch (err) {
+      console.error('Failed to start conversation:', err)
+      setConnectionStatus('error')
+      alert('Failed to start AI conversation. Check microphone permissions.')
     }
   }
 
@@ -216,9 +260,23 @@ export default function SafetyPage() {
             <div className="caller-avatar">{fakeCallActive.emoji}</div>
             <h2 className="caller-name">{fakeCallActive.name}</h2>
             <p className="call-timer">{formatCallTime(callTimer)}</p>
-            <div className="call-message">
-              <p>"Hey! I'm outside waiting. Come out when you're ready!"</p>
-            </div>
+
+            {useAiVoice && agentId ? (
+              <div className="ai-status-indicator">
+                <div className={`status-dot ${connectionStatus}`}></div>
+                <span>
+                  {connectionStatus === 'connecting' && 'Connecting to AI...'}
+                  {connectionStatus === 'connected' && 'AI Connected'}
+                  {connectionStatus === 'listening' && 'Listening...'}
+                  {connectionStatus === 'speaking' && 'Speaking...'}
+                  {connectionStatus === 'error' && 'Connection Error'}
+                </span>
+              </div>
+            ) : (
+              <div className="call-message">
+                <p>"Hey! I'm outside waiting. Come out when you're ready!"</p>
+              </div>
+            )}
             <button className="end-call-btn" onClick={endCall}>
               End Call
             </button>
@@ -253,6 +311,37 @@ export default function SafetyPage() {
           <div className="info-banner warning">
             <AlertTriangle size={18} />
             <span>Use fake calls to safely exit uncomfortable situations without confrontation.</span>
+          </div>
+
+          <div className="settings-card mb-4">
+            <div className="setting-row">
+              <div className="setting-info">
+                <h3>Conversational AI Agent</h3>
+                <p>Enable two-way conversation with ElevenLabs Agent</p>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={useAiVoice}
+                  onChange={(e) => setUseAiVoice(e.target.checked)}
+                />
+                <span className="slider round"></span>
+              </label>
+            </div>
+
+            {useAiVoice && (
+              <div className="setting-input-row">
+                <label>Agent ID</label>
+                <input
+                  type="text"
+                  placeholder="Enter ElevenLabs Agent ID"
+                  value={agentId}
+                  onChange={(e) => setAgentId(e.target.value)}
+                  className="agent-id-input"
+                />
+                <p className="help-text">Default ID provided. Change only if using a custom agent.</p>
+              </div>
+            )}
           </div>
 
           <h3 className="section-title">QUICK CALL SCENARIOS</h3>

@@ -93,11 +93,25 @@ router.post('/upload', authenticateToken, upload.single('video'), (req, res) => 
       address || null
     )
 
+    const recordingId = result.lastInsertRowid
+
     if (stream_id) {
-      db.prepare('UPDATE stream_sessions SET recording_id = ? WHERE id = ?').run(result.lastInsertRowid, stream_id)
+      db.prepare('UPDATE stream_sessions SET recording_id = ? WHERE id = ?').run(recordingId, stream_id)
     }
 
-    const recording = db.prepare('SELECT * FROM recordings WHERE id = ?').get(result.lastInsertRowid)
+    // Trigger TwelveLabs Indexing (Async)
+    import('../services/twelvelabs.js').then(async ({ indexVideo }) => {
+      try {
+        const taskId = await indexVideo(req.file.path, recordingId)
+        if (taskId) {
+          db.prepare('UPDATE recordings SET twelvelabs_task_id = ? WHERE id = ?').run(taskId, recordingId)
+        }
+      } catch (err) {
+        console.error('Async indexing failed:', err)
+      }
+    })
+
+    const recording = db.prepare('SELECT * FROM recordings WHERE id = ?').get(recordingId)
 
     res.status(201).json({
       recording: {
@@ -244,6 +258,90 @@ router.get('/:id/download', authenticateToken, (req, res) => {
   } catch (error) {
     console.error('Download error:', error)
     res.status(500).json({ error: 'Failed to download video' })
+  }
+
+})
+
+router.get('/:id/analysis', authenticateToken, async (req, res) => {
+  try {
+    const recording = db.prepare(
+      'SELECT * FROM recordings WHERE id = ? AND user_id = ?'
+    ).get(req.params.id, req.user.id)
+
+    if (!recording) {
+      return res.status(404).json({ error: 'Recording not found' })
+    }
+
+    // If already analyzed, return cached results
+    if (recording.ai_events && recording.ai_events !== '[]') {
+      const events = JSON.parse(recording.ai_events)
+      // Check if summary is missing (legacy analysis)
+      if (!events.summary && recording.twelvelabs_task_id) {
+        // Fall through to re-analyze/summarize
+      } else {
+        return res.json({ status: 'ready', events: events.events || events, summary: events.summary })
+      }
+    }
+
+    if (recording.twelvelabs_task_id) {
+      const { getTaskStatus, searchVideo, generateSummary } = await import('../services/twelvelabs.js')
+      const status = await getTaskStatus(recording.twelvelabs_task_id)
+
+      if (status && status.status === 'ready') {
+        const envIndexId = process.env.TWELVELABS_INDEX_ID
+
+        if (envIndexId) {
+          // 1. Search for threats (Marengo)
+          const keywords = ['gunshot', 'scream', 'fire', 'explosion', 'weapon', 'fighting', 'crash']
+          const searchPromises = keywords.map(q => searchVideo(envIndexId, q))
+          const results = await Promise.all(searchPromises)
+
+          const events = []
+          results.forEach((result, index) => {
+            if (result && result.data) {
+              result.data.forEach(item => {
+                if (item.score > 75) { // Confidence threshold
+                  events.push({
+                    type: keywords[index],
+                    start: item.start,
+                    end: item.end,
+                    confidence: item.score
+                  })
+                }
+              })
+            }
+          })
+
+          // 2. Generate Summary (Pegasus)
+          let summary = null
+          try {
+            const summaryResult = await generateSummary(recording.twelvelabs_task_id) // Usually video_id is task_id in some contexts or we need video_id
+            // Wait, TwelveLabs search uses index_id + query. Generate uses video_id.
+            // The task_id from upload is usually the task ID. We need the VIDEO ID.
+            // The task status response usually contains the video_id.
+            if (status.video_id) {
+              const summaryRes = await generateSummary(status.video_id)
+              summary = summaryRes ? summaryRes.summary : null
+            }
+          } catch (err) {
+            console.error('Summary generation failed:', err)
+          }
+
+          // Save to DB
+          const aiData = { events, summary }
+          db.prepare('UPDATE recordings SET ai_events = ? WHERE id = ?').run(JSON.stringify(aiData), recording.id)
+
+          return res.json({ status: 'ready', events, summary })
+        }
+      } else if (status) {
+        return res.json({ status: status.status })
+      }
+    }
+
+    res.json({ status: 'pending' })
+  } catch (error) {
+    console.error('Analysis error:', error)
+    res.status(500).json({ error: 'Failed to get analysis' })
   }
 })
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
-  Clock, Video, Shield, Download, Trash2, Eye, Share2, X, Play
+  Clock, Video, Shield, Download, Trash2, Eye, Share2, X, Play,
+  AlertTriangle, CheckCircle, Loader, FileText
 } from 'lucide-react'
 import { format } from 'date-fns'
 import api from '../services/api'
@@ -180,29 +181,135 @@ export default function HistoryPage() {
 
       {/* Video Player Modal */}
       {selectedRecording && (
-        <div className="video-modal-overlay" onClick={() => setSelectedRecording(null)}>
-          <div className="video-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="video-modal-header">
-              <span>Recording from {format(new Date(selectedRecording.created_at), 'MMM d, yyyy')}</span>
-              <button className="close-btn" onClick={() => setSelectedRecording(null)}>
-                <X size={24} />
-              </button>
+        <VideoModal
+          recording={selectedRecording}
+          onClose={() => setSelectedRecording(null)}
+          onDownload={() => downloadRecording(selectedRecording)}
+          getVideoUrl={getVideoUrl}
+        />
+      )}
+    </div>
+  )
+}
+
+function VideoModal({ recording, onClose, onDownload, getVideoUrl }) {
+  const [aiEvents, setAiEvents] = useState([])
+  const [aiSummary, setAiSummary] = useState(null)
+  const [analysisStatus, setAnalysisStatus] = useState('loading')
+
+  useEffect(() => {
+    const fetchAnalysis = async () => {
+      try {
+        const res = await api.getRecordingAnalysis(recording.id)
+        setAnalysisStatus(res.status)
+        if (res.events) setAiEvents(res.events)
+        if (res.summary) setAiSummary(res.summary)
+      } catch (err) {
+        console.error('Analysis fetch error:', err)
+        setAnalysisStatus('error')
+      }
+    }
+    fetchAnalysis()
+
+    // Poll if processing
+    const interval = setInterval(async () => {
+      if (analysisStatus === 'processing' || analysisStatus === 'pending' || analysisStatus === 'loading') {
+        try {
+          const res = await api.getRecordingAnalysis(recording.id)
+          setAnalysisStatus(res.status)
+          if (res.events) setAiEvents(res.events)
+          if (res.summary) setAiSummary(res.summary)
+        } catch (err) {
+          console.error('Polling error:', err)
+        }
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [recording.id, analysisStatus])
+
+  return (
+    <div className="video-modal-overlay" onClick={onClose}>
+      <div className="video-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="video-modal-header">
+          <span>Recording from {format(new Date(recording.created_at), 'MMM d, yyyy')}</span>
+          <button className="close-btn" onClick={onClose}>
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="video-container">
+          <video
+            src={getVideoUrl(recording)}
+            controls
+            autoPlay
+            className="video-player"
+          />
+          {aiEvents.length > 0 && (
+            <div className="ai-markers-overlay">
+              {aiEvents.map((event, i) => (
+                <div
+                  key={i}
+                  className="ai-marker"
+                  style={{ left: `${(event.start / recording.duration) * 100}%` }}
+                  title={`${event.type} detected at ${event.start}s`}
+                />
+              ))}
             </div>
-            <video
-              src={getVideoUrl(selectedRecording)}
-              controls
-              autoPlay
-              className="video-player"
-            />
-            <div className="video-modal-actions">
-              <button className="btn btn-outline" onClick={() => downloadRecording(selectedRecording)}>
-                <Download size={18} />
-                DOWNLOAD
-              </button>
+          )}
+        </div>
+
+        {/* AI Analysis Section */}
+        <div className="ai-analysis-section">
+          <div className="analysis-header">
+            <h4>AI THREAT DETECTION</h4>
+            <div className={`status-badge ${analysisStatus}`}>
+              {analysisStatus === 'loading' || analysisStatus === 'processing' || analysisStatus === 'pending' ? (
+                <>
+                  <Loader size={14} className="spin" />
+                  ANALYZING...
+                </>
+              ) : analysisStatus === 'ready' ? (
+                <>
+                  <CheckCircle size={14} />
+                  COMPLETE
+                </>
+              ) : (
+                <span>{analysisStatus.toUpperCase()}</span>
+              )}
             </div>
           </div>
+
+          {aiSummary && (
+            <div className="ai-summary">
+              <h5><FileText size={14} /> Video Summary</h5>
+              <p>{aiSummary}</p>
+            </div>
+          )}
+
+          <div className="ai-events-list">
+            {aiEvents.length === 0 && analysisStatus === 'ready' ? (
+              <p className="no-threats">No specific threats detected.</p>
+            ) : (
+              aiEvents.map((event, i) => (
+                <div key={i} className="ai-event-item">
+                  <AlertTriangle size={16} className="text-danger" />
+                  <span className="event-time">{Math.floor(event.start)}s - {Math.floor(event.end)}s</span>
+                  <span className="event-type">{event.type.toUpperCase()}</span>
+                  <span className="event-confidence">{(event.confidence).toFixed(0)}% Confidence</span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      )}
+
+        <div className="video-modal-actions">
+          <button className="btn btn-outline" onClick={onDownload}>
+            <Download size={18} />
+            DOWNLOAD
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
