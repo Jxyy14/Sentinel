@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 import SafetyScore from '../components/SafetyScore'
 import { getEmergencyServices } from '../services/emergencyServices'
+import Call911ForMeModal from '../components/Call911ForMeModal'
 import './HomePage.css'
 
 const quickActions = [
@@ -35,6 +36,7 @@ export default function HomePage() {
   const [safeLocations, setSafeLocations] = useState([])
   const [hasMedical, setHasMedical] = useState(false)
   const [longPressProgress, setLongPressProgress] = useState(0)
+  const [showCall911Modal, setShowCall911Modal] = useState(false)
 
   const longPressTimer = useRef(null)
   const longPressStart = useRef(null)
@@ -249,6 +251,14 @@ export default function HomePage() {
         ))}
       </div>
 
+      <button
+        className="call-911-for-me-btn"
+        onClick={() => setShowCall911Modal(true)}
+      >
+        <Phone size={20} />
+        <span>Call 9111 for Me</span>
+      </button>
+
       <SafetyScore data={safetyData} />
 
       <div className="grid-2 stats-grid">
@@ -334,6 +344,12 @@ export default function HomePage() {
           </div>
         </button>
       </div>
+
+      {/* Call 9111 for Me Modal */}
+      <Call911ForMeModal
+        isOpen={showCall911Modal}
+        onClose={() => setShowCall911Modal(false)}
+      />
     </div>
   )
 }

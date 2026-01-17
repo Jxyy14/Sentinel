@@ -42,10 +42,10 @@ export default function EmergencyCallModal({
         setCallDuration(d => d + 1)
       }, 1000)
 
-      // Start periodic video analysis
+      // Video analysis every 30 seconds (using good Gemini model)
       videoAnalysisRef.current = setInterval(() => {
         captureAndAnalyzeVideo()
-      }, 10000) // Analyze every 10 seconds
+      }, 30000) // 30 seconds - less frequent to avoid rate limits
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
@@ -100,7 +100,7 @@ export default function EmergencyCallModal({
     }
   }, [videoRef])
 
-  // Analyze current video frame
+  // Analyze current video frame using Gemini Vision
   const captureAndAnalyzeVideo = useCallback(async () => {
     if (callStatus !== 'active' || isAnalyzingVideo) return
 
@@ -116,12 +116,15 @@ export default function EmergencyCallModal({
         // Add to transcript as system message
         setTranscript(prev => [...prev, {
           role: 'system',
-          content: `[Video Update] ${result.analysis}`,
+          content: `[Video] ${result.analysis}`,
           timestamp: new Date().toISOString()
         }])
       }
     } catch (e) {
-      console.error('Video analysis error:', e)
+      // Don't spam errors if rate limited
+      if (!e.message?.includes('rate') && !e.message?.includes('503')) {
+        console.error('Video analysis error:', e)
+      }
     }
     setIsAnalyzingVideo(false)
   }, [callStatus, isAnalyzingVideo, captureVideoFrame])
@@ -183,27 +186,15 @@ export default function EmergencyCallModal({
     setLastVideoAnalysis(null)
 
     try {
-      // Capture initial video frame for analysis
-      const videoFrame = captureVideoFrame()
-      let initialVideoAnalysis = null
-      
-      if (videoFrame) {
-        try {
-          const analysisResult = await api.analyzeEmergencySituation({
-            videoDescription: 'Live video feed from emergency'
-          })
-          initialVideoAnalysis = analysisResult?.summary
-        } catch (e) {
-          console.log('Initial video analysis failed:', e)
-        }
-      }
-
       const situationDesc = situation || 'Emergency situation - caller may be in danger and cannot speak'
+
+      // Capture initial video frame for analysis (uses good Gemini model)
+      const videoFrame = captureVideoFrame()
 
       const response = await api.initiateEmergencyCall({
         location: location || { address: 'Location unknown' },
         situation: situationDesc,
-        videoAnalysis: initialVideoAnalysis
+        videoFrame: videoFrame  // Send for initial analysis
       })
 
       if (response.success) {
@@ -389,7 +380,7 @@ export default function EmergencyCallModal({
 
               <button className="call-911-btn" onClick={initiateCall}>
                 <Phone size={24} />
-                <span>CALL 911</span>
+                <span>CALL 9111</span>
               </button>
 
               <p className="test-notice">
@@ -438,7 +429,7 @@ export default function EmergencyCallModal({
                 {transcript.map((msg, i) => (
                   <div key={i} className={`transcript-message ${msg.role}`}>
                     <span className="message-role">
-                      {msg.role === 'operator' ? '911 Operator' : 
+                      {msg.role === 'operator' ? '9111 Operator' : 
                        msg.role === 'ai' ? 'AI Assistant' : 
                        msg.role === 'system' ? 'System' : msg.role}
                     </span>
@@ -463,7 +454,7 @@ export default function EmergencyCallModal({
               <div className="operator-input-section">
                 <p className="input-label">
                   {callType === 'real' 
-                    ? 'Type what the 911 operator says:' 
+                    ? 'Type what the 9111 operator says:' 
                     : 'Simulate operator question:'}
                 </p>
                 <div className="input-row">
@@ -513,7 +504,7 @@ export default function EmergencyCallModal({
                     {transcript.map((msg, i) => (
                       <div key={i} className={`transcript-message ${msg.role}`}>
                         <span className="message-role">
-                          {msg.role === 'operator' ? '911 Operator' : 
+                          {msg.role === 'operator' ? '9111 Operator' : 
                            msg.role === 'ai' ? 'AI Assistant' : 
                            msg.role === 'system' ? 'System' : msg.role}
                         </span>

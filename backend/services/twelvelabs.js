@@ -141,3 +141,99 @@ export const generateSummary = async (videoId) => {
         return null
     }
 }
+
+// Quick analyze a video file - uploads, waits for indexing, returns analysis
+export const quickAnalyzeVideo = async (videoFilePath) => {
+    try {
+        const client = getClient()
+        if (!client) {
+            console.log('TwelveLabs not configured')
+            return null
+        }
+        
+        const indexId = process.env.TWELVELABS_INDEX_ID
+        if (!indexId) {
+            console.log('TwelveLabs Index ID missing')
+            return null
+        }
+
+        console.log('Quick analyzing video:', videoFilePath)
+        
+        // Convert to mp4 if needed
+        let videoPath = videoFilePath
+        if (videoFilePath.endsWith('.webm')) {
+            const mp4Path = await convertToMp4(videoFilePath)
+            if (mp4Path && fs.existsSync(mp4Path)) {
+                videoPath = mp4Path
+            }
+        }
+
+        // Upload and create task
+        const task = await client.tasks.create({
+            indexId,
+            videoFile: fs.createReadStream(videoPath),
+            language: 'en'
+        })
+        
+        console.log('Task created:', task.id)
+
+        // Wait for indexing (poll every 3 seconds, max 60 seconds)
+        let status = null
+        let videoId = null
+        const startTime = Date.now()
+        const timeout = 60000 // 60 seconds max
+        
+        while (Date.now() - startTime < timeout) {
+            const taskStatus = await client.tasks.retrieve(task.id)
+            console.log('Task status:', taskStatus.status)
+            
+            if (taskStatus.status === 'ready') {
+                videoId = taskStatus.videoId
+                break
+            } else if (taskStatus.status === 'failed') {
+                console.error('Task failed')
+                return null
+            }
+            
+            // Wait 3 seconds before next poll
+            await new Promise(r => setTimeout(r, 3000))
+        }
+
+        if (!videoId) {
+            console.log('Indexing timed out')
+            return null
+        }
+
+        // Get quick analysis using gist
+        try {
+            const gist = await client.gist({
+                videoId,
+                types: ['topic', 'hashtag', 'title']
+            })
+            
+            // Also get a detailed analysis
+            const analysis = await client.analyze({
+                videoId,
+                prompt: 'Describe what is happening in this video for a 9111 emergency call. Focus on: people, actions, any dangers or threats, injuries, and important details. Be factual and concise.'
+            })
+            
+            return {
+                gist: gist,
+                analysis: analysis?.data || analysis,
+                videoId
+            }
+        } catch (e) {
+            console.error('Analysis error:', e.message)
+            // Try summarize as fallback
+            const summary = await client.summarize({
+                videoId,
+                type: 'summary',
+                prompt: 'Describe what is happening for a 9111 call. Be factual.'
+            })
+            return { summary: summary?.summary || summary?.data, videoId }
+        }
+    } catch (error) {
+        console.error('Quick analyze error:', error.message)
+        return null
+    }
+}

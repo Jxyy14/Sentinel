@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
+import { callSafetyContacts, CallReasons } from '../services/safetyContactCalls'
 import './TripPage.css'
 
 export default function TripPage() {
@@ -23,6 +24,10 @@ export default function TripPage() {
     const [expectedMinutes, setExpectedMinutes] = useState(30)
     const [selectedContacts, setSelectedContacts] = useState([])
     const [bufferMinutes, setBufferMinutes] = useState(10)
+    const [showCustomExpected, setShowCustomExpected] = useState(false)
+    const [showCustomBuffer, setShowCustomBuffer] = useState(false)
+    const [customExpected, setCustomExpected] = useState('')
+    const [customBuffer, setCustomBuffer] = useState('')
 
     useEffect(() => {
         loadData()
@@ -63,9 +68,41 @@ export default function TripPage() {
     }
 
     const handleTripExpired = async (trip) => {
-        // In a real app, this would trigger notifications to contacts
+        // Call safety contacts instead of starting recording
         console.log('Trip expired without arrival confirmation:', trip)
-        // Could auto-start stream or send alerts here
+        try {
+            // Get user's location
+            let location = null
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 5000
+                    })
+                })
+                const lat = position.coords.latitude
+                const lng = position.coords.longitude
+                let address = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+                try {
+                    const geoResponse = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
+                    )
+                    const geoData = await geoResponse.json()
+                    if (geoData.display_name) address = geoData.display_name
+                } catch (e) {}
+                location = { lat, lng, address }
+            } catch (e) {
+                location = { address: 'Location unknown' }
+            }
+
+            await callSafetyContacts({
+                reason: `${CallReasons.TRIP_EXPIRED}. Trip to ${trip.destination || 'destination'} expected ${trip.expectedMinutes || 30} minutes ago.`,
+                location,
+                additionalInfo: `Expected arrival time was ${new Date(trip.expectedArrival).toLocaleTimeString()}. User has not confirmed arrival.`
+            })
+        } catch (error) {
+            console.error('Failed to call safety contacts on trip expiration:', error)
+        }
     }
 
     const startTrip = () => {
@@ -90,12 +127,22 @@ export default function TripPage() {
 
         localStorage.setItem('activeTrip', JSON.stringify(newTrip))
         setActiveTrip(newTrip)
-        setShowNewTrip(false)
-        setDestination('')
-        setSelectedContacts([])
+        closeTripModal()
 
         // Start countdown timer
         scheduleAlerts(newTrip)
+    }
+
+    const closeTripModal = () => {
+        setShowNewTrip(false)
+        setDestination('')
+        setSelectedContacts([])
+        setExpectedMinutes(30)
+        setBufferMinutes(10)
+        setShowCustomExpected(false)
+        setShowCustomBuffer(false)
+        setCustomExpected('')
+        setCustomBuffer('')
     }
 
     const scheduleAlerts = (trip) => {
@@ -114,13 +161,13 @@ export default function TripPage() {
 
         // Alert contacts if no check-in by alert time
         if (timeUntilAlert > 0) {
-            setTimeout(() => {
+            setTimeout(async () => {
                 const currentTrip = localStorage.getItem('activeTrip')
                 if (currentTrip) {
                     const parsed = JSON.parse(currentTrip)
                     if (!parsed.arrived) {
-                        // Trigger emergency alert
-                        navigate('/stream')
+                        // Call safety contacts instead of starting recording
+                        handleTripExpired(parsed)
                     }
                 }
             }, timeUntilAlert)
@@ -272,13 +319,48 @@ export default function TripPage() {
                             {[15, 30, 45, 60, 90, 120].map(mins => (
                                 <button
                                     key={mins}
-                                    className={`option-btn ${expectedMinutes === mins ? 'active' : ''}`}
-                                    onClick={() => setExpectedMinutes(mins)}
+                                    className={`option-btn ${expectedMinutes === mins && !showCustomExpected ? 'active' : ''}`}
+                                    onClick={() => {
+                                        setShowCustomExpected(false)
+                                        setExpectedMinutes(mins)
+                                    }}
                                 >
                                     {mins < 60 ? `${mins}m` : `${mins / 60}h`}
                                 </button>
                             ))}
+                            <button
+                                className={`option-btn custom ${showCustomExpected ? 'active' : ''}`}
+                                onClick={() => {
+                                    setShowCustomExpected(true)
+                                    if (customExpected) {
+                                        setExpectedMinutes(parseInt(customExpected) || 30)
+                                    }
+                                }}
+                            >
+                                Custom
+                            </button>
                         </div>
+                        {showCustomExpected && (
+                            <div className="custom-input-group">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="1440"
+                                    placeholder="Minutes"
+                                    value={customExpected}
+                                    onChange={(e) => {
+                                        const val = e.target.value
+                                        setCustomExpected(val)
+                                        const minutes = parseInt(val) || 0
+                                        if (minutes > 0) {
+                                            setExpectedMinutes(minutes)
+                                        }
+                                    }}
+                                    className="custom-time-input"
+                                />
+                                <span className="input-hint">minutes (1-1440)</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="form-group">
@@ -287,13 +369,48 @@ export default function TripPage() {
                             {[5, 10, 15, 30].map(mins => (
                                 <button
                                     key={mins}
-                                    className={`option-btn ${bufferMinutes === mins ? 'active' : ''}`}
-                                    onClick={() => setBufferMinutes(mins)}
+                                    className={`option-btn ${bufferMinutes === mins && !showCustomBuffer ? 'active' : ''}`}
+                                    onClick={() => {
+                                        setShowCustomBuffer(false)
+                                        setBufferMinutes(mins)
+                                    }}
                                 >
                                     +{mins}m
                                 </button>
                             ))}
+                            <button
+                                className={`option-btn custom ${showCustomBuffer ? 'active' : ''}`}
+                                onClick={() => {
+                                    setShowCustomBuffer(true)
+                                    if (customBuffer) {
+                                        setBufferMinutes(parseInt(customBuffer) || 10)
+                                    }
+                                }}
+                            >
+                                Custom
+                            </button>
                         </div>
+                        {showCustomBuffer && (
+                            <div className="custom-input-group">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="120"
+                                    placeholder="Minutes"
+                                    value={customBuffer}
+                                    onChange={(e) => {
+                                        const val = e.target.value
+                                        setCustomBuffer(val)
+                                        const minutes = parseInt(val) || 0
+                                        if (minutes > 0) {
+                                            setBufferMinutes(minutes)
+                                        }
+                                    }}
+                                    className="custom-time-input"
+                                />
+                                <span className="input-hint">minutes (1-120)</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="form-group">
@@ -317,7 +434,7 @@ export default function TripPage() {
                     </div>
 
                     <div className="form-actions">
-                        <button className="btn btn-outline" onClick={() => setShowNewTrip(false)}>
+                        <button className="btn btn-outline" onClick={closeTripModal}>
                             CANCEL
                         </button>
                         <button

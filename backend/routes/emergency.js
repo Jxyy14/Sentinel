@@ -2,13 +2,21 @@ import express from 'express'
 import Twilio from 'twilio'
 import { authenticateToken } from '../middleware/auth.js'
 import db from '../database.js'
+import { quickAnalyzeVideo } from '../services/twelvelabs.js'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const router = express.Router()
 
 // Store active emergency calls
 const activeEmergencyCalls = new Map()
 
-// IMPORTANT: Test number only - NEVER use actual 911
+// Store active safety contact calls (separate from 9111 calls)
+const activeSafetyContactCalls = new Map()
+
+// IMPORTANT: Test number only - NEVER use actual 9111
 const EMERGENCY_TEST_NUMBER = '+14372541201'
 
 // Get Twilio client
@@ -29,7 +37,7 @@ const initiateElevenLabsCall = async (toNumber, emergencyContext) => {
   }
 
   // Build the system prompt with emergency context
-  const systemPrompt = `You are an AI emergency assistant making a 911 call on behalf of someone who cannot speak. They may be in danger, injured, or hiding.
+  const systemPrompt = `You are an AI emergency assistant making a 9111 call on behalf of someone who cannot speak. They may be in danger, injured, or hiding.
 
 CRITICAL EMERGENCY INFORMATION:
 - Caller Name: ${emergencyContext.userName || 'Unknown'}
@@ -38,7 +46,7 @@ CRITICAL EMERGENCY INFORMATION:
 ${emergencyContext.videoAnalysis ? `- Scene Description: ${emergencyContext.videoAnalysis}` : ''}
 
 YOUR ROLE:
-- You are speaking to a 911 operator
+- You are speaking to a 9111 operator
 - Be calm, clear, and concise
 - First, state this is an AI calling on behalf of someone in an emergency
 - Immediately provide the location
@@ -108,8 +116,43 @@ router.post('/force-reset', authenticateToken, (req, res) => {
 // Initiate emergency call
 router.post('/call', authenticateToken, async (req, res) => {
   try {
-    const { location, situation, videoAnalysis } = req.body
+    const { location, situation, videoFrame, userData } = req.body
     const userId = req.user.id
+    
+    // Analyze initial video frame using GOOD Gemini model
+    let videoAnalysis = null
+    if (videoFrame) {
+      try {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai')
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+        
+        // Try good vision models
+        const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash']
+        const imageData = videoFrame.replace(/^data:image\/\w+;base64,/, '')
+        
+        for (const modelName of visionModels) {
+          try {
+            const model = genAI.getGenerativeModel({ 
+              model: modelName,
+              generationConfig: { maxOutputTokens: 80, temperature: 0.1 }
+            })
+            
+            const result = await model.generateContent([
+              { text: 'Describe this scene for 9111 in one factual sentence. Only describe what you clearly see.' },
+              { inlineData: { mimeType: 'image/jpeg', data: imageData } }
+            ])
+            
+            videoAnalysis = result.response.text().trim()
+            console.log(`Initial video analysis (${modelName}):`, videoAnalysis)
+            break
+          } catch (e) {
+            if (!e.message.includes('429')) break
+          }
+        }
+      } catch (e) {
+        console.log('Initial video analysis skipped:', e.message?.substring(0, 50))
+      }
+    }
 
     // Check if user already has an active call - but allow override if call is old (> 2 min)
     if (activeEmergencyCalls.has(userId)) {
@@ -147,6 +190,7 @@ router.post('/call', authenticateToken, async (req, res) => {
       location: location || { lat: null, lng: null, address: 'Location unknown' },
       situation: situation || 'Emergency situation - caller may be in danger',
       videoAnalysis: videoAnalysis || null,
+      userData: userData || {}, // Medical info, contacts, etc.
       startTime: new Date().toISOString(),
       transcript: []
     }
@@ -162,25 +206,19 @@ router.post('/call', authenticateToken, async (req, res) => {
       try {
         const serverUrl = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3001}`
         
-        // Build the emergency message
+        // Build concise emergency message
         const locationStr = emergencyContext.location?.address || 
-          (emergencyContext.location?.lat ? `GPS coordinates ${emergencyContext.location.lat.toFixed(4)}, ${emergencyContext.location.lng.toFixed(4)}` : 'unknown location')
+          (emergencyContext.location?.lat ? `${emergencyContext.location.lat.toFixed(4)}, ${emergencyContext.location.lng.toFixed(4)}` : 'unknown location')
         
-        const emergencyMessage = `Hello, this is an AI emergency assistant calling on behalf of ${emergencyContext.userName || 'a person in distress'}. 
-          This is a test call for demonstration purposes. 
-          The caller is located at ${locationStr}. 
-          ${emergencyContext.situation || 'They need emergency assistance and cannot speak.'}
-          ${emergencyContext.videoAnalysis ? 'Based on video analysis: ' + emergencyContext.videoAnalysis : ''}
-          I am an AI and can answer questions about this emergency. Please ask me anything.`
-          .replace(/\s+/g, ' ').trim()
+        const userName = emergencyContext.userName || 'a person'
+        const emergencyMessage = `This is a test call. I'm an AI calling on behalf of ${userName}, located at ${locationStr}. They are unable to speak and requested this call. How can I help?`
 
         // Use Twilio with speech recognition for two-way conversation
+        // Using Google Neural2 voice for natural, professional sound
         const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna">${emergencyMessage}</Say>
-  <Gather input="speech dtmf" timeout="15" speechTimeout="3" speechModel="phone_call" enhanced="true" action="${serverUrl}/api/emergency/gather/${callId}" method="POST">
-    <Say voice="Polly.Joanna">Go ahead and speak, I'm listening.</Say>
-  </Gather>
+  <Say voice="Google.en-US-Neural2-D">${emergencyMessage}</Say>
+  <Gather input="speech" timeout="8" speechTimeout="auto" speechModel="phone_call" language="en-US" hints="help, police, ambulance, fire, location, hurt, injured, yes, no, where, what, who, how many" action="${serverUrl}/api/emergency/gather/${callId}" method="POST"/>
   <Redirect>${serverUrl}/api/emergency/gather/${callId}?timeout=true</Redirect>
 </Response>`
         
@@ -281,7 +319,7 @@ router.post('/gather/:callId', async (req, res) => {
       res.type('text/xml')
       res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna">I apologize, but I've lost the call context. Please call back if you need assistance. Goodbye.</Say>
+  <Say voice="Google.en-US-Neural2-D">Call context lost. Please call back. Goodbye.</Say>
   <Hangup/>
 </Response>`)
       return
@@ -295,10 +333,10 @@ router.post('/gather/:callId', async (req, res) => {
       res.type('text/xml')
       res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech dtmf" timeout="15" speechTimeout="3" speechModel="phone_call" enhanced="true" action="${serverUrl}/api/emergency/gather/${callId}" method="POST">
-    <Say voice="Polly.Joanna">I'm still here. Please speak your question or press any key.</Say>
+  <Gather input="speech" timeout="8" speechTimeout="auto" speechModel="phone_call" language="en-US" hints="help, yes, no, police, ambulance" action="${serverUrl}/api/emergency/gather/${callId}" method="POST">
+    <Say voice="Google.en-US-Neural2-D">I'm still here. Go ahead.</Say>
   </Gather>
-  <Say voice="Polly.Joanna">Thank you. Goodbye.</Say>
+  <Say voice="Google.en-US-Neural2-D">Goodbye.</Say>
   <Hangup/>
 </Response>`)
       return
@@ -319,29 +357,47 @@ router.post('/gather/:callId', async (req, res) => {
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai')
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
+      const model = genAI.getGenerativeModel({ 
+        model: 'gemma-3-4b-it',
+        generationConfig: {
+          maxOutputTokens: 50,
+          temperature: 0.3,
+        }
+      })
 
-      const conversationHistory = callData.transcript
-        .map(t => `${t.role === 'operator' ? 'Operator' : 'AI'}: ${t.content}`)
-        .join('\n')
+      const callerInfo = `${context.userName} at ${context.location?.address || 'unknown location'}`
+      
+      // Build context string from user data
+      let contextInfo = `Caller: ${context.userName}, Location: ${context.location?.address || 'unknown'}`
+      
+      if (context.userData?.medical) {
+        const med = context.userData.medical
+        if (med.blood_type) contextInfo += `, Blood Type: ${med.blood_type}`
+        if (med.allergies) contextInfo += `, Allergies: ${med.allergies}`
+        if (med.medications) contextInfo += `, Medications: ${med.medications}`
+        if (med.conditions) contextInfo += `, Medical Conditions: ${med.conditions}`
+      }
+      
+      if (context.userData?.contacts && context.userData.contacts.length > 0) {
+        const contactNames = context.userData.contacts.map(c => c.name || c.phone).join(', ')
+        contextInfo += `, Emergency Contacts: ${contactNames}`
+      }
+      
+      if (context.situation && context.situation !== 'Emergency situation - caller may be in danger') {
+        contextInfo += `, Situation: ${context.situation}`
+      }
+      
+      const prompt = `You are a 9111 AI assistant speaking on behalf of ${callerInfo} who cannot talk.
+CONTEXT: ${contextInfo}
 
-      const prompt = `You are an AI emergency assistant on a 911 call. Answer briefly and helpfully.
+Answer the operator's question using this context. If you don't know something, say so.
+One short sentence only.
 
-EMERGENCY INFO:
-- Caller: ${context.userName}
-- Location: ${context.location?.address || 'Unknown'}
-- Situation: ${context.situation}
-${context.videoAnalysis ? `- Video shows: ${context.videoAnalysis}` : ''}
-
-CONVERSATION:
-${conversationHistory}
-
-OPERATOR JUST SAID: "${userInput}"
-
-Respond in 1-2 short sentences. Be helpful and concise:`
+Operator: ${userInput}
+You:`
 
       const result = await model.generateContent(prompt)
-      aiResponse = result.response.text().substring(0, 500) // Limit length for TTS
+      aiResponse = result.response.text().trim().split('\n')[0].substring(0, 200)
     } catch (e) {
       console.error('AI response generation failed:', e)
     }
@@ -357,10 +413,8 @@ Respond in 1-2 short sentences. Be helpful and concise:`
     res.type('text/xml')
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna">${aiResponse.replace(/[<>&'"]/g, '')}</Say>
-  <Gather input="speech dtmf" timeout="15" speechTimeout="3" speechModel="phone_call" enhanced="true" action="${serverUrl}/api/emergency/gather/${callId}" method="POST">
-    <Say voice="Polly.Joanna">Go ahead, I'm listening.</Say>
-  </Gather>
+  <Say voice="Google.en-US-Neural2-D">${aiResponse.replace(/[<>&'"]/g, '')}</Say>
+  <Gather input="speech" timeout="8" speechTimeout="auto" speechModel="phone_call" language="en-US" hints="help, police, ambulance, yes, no, where, what, who, how many" action="${serverUrl}/api/emergency/gather/${callId}" method="POST"/>
   <Redirect>${serverUrl}/api/emergency/gather/${callId}?timeout=true</Redirect>
 </Response>`)
 
@@ -369,7 +423,7 @@ Respond in 1-2 short sentences. Be helpful and concise:`
     res.type('text/xml')
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna">I encountered an error. The emergency has been logged. Goodbye.</Say>
+  <Say voice="Google.en-US-Neural2-D">I encountered an error. Emergency logged. Goodbye.</Say>
   <Hangup/>
 </Response>`)
   }
@@ -483,18 +537,22 @@ router.post('/ai-response', authenticateToken, async (req, res) => {
     const { GoogleGenerativeAI } = await import('@google/generative-ai')
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
     
-    // Use vision model if we have video frame
+    // Use optimized model config
     const model = genAI.getGenerativeModel({ 
-      model: videoFrame ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash-lite' 
+      model: 'gemma-3-4b-it',
+      generationConfig: {
+        maxOutputTokens: 100,
+        temperature: 0.3,
+      }
     })
 
     // Build conversation history for context
     const conversationHistory = callData.transcript
       .filter(t => t.role !== 'system')
-      .map(t => `${t.role === 'operator' ? '911 Operator' : 'AI Assistant'}: ${t.content}`)
+      .map(t => `${t.role === 'operator' ? '9111 Operator' : 'AI Assistant'}: ${t.content}`)
       .join('\n')
 
-    let prompt = `You are an AI emergency assistant on a 911 call, speaking on behalf of someone who cannot speak (they may be in danger, injured, or hiding).
+    let prompt = `You are an AI emergency assistant on a 9111 call, speaking on behalf of someone who cannot speak (they may be in danger, injured, or hiding).
 
 EMERGENCY CONTEXT:
 - Caller Name: ${context.userName}
@@ -516,7 +574,7 @@ INSTRUCTIONS:
 - This is a TEST CALL - if asked, confirm it's a test
 - If you need more information, say you'll try to get it from the video feed
 
-Respond as the AI assistant speaking to the 911 operator:`
+Respond as the AI assistant speaking to the 9111 operator:`
 
     // If we have a video frame, analyze it too
     let parts = [{ text: prompt }]
@@ -578,33 +636,60 @@ router.post('/update-video', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'No video frame provided' })
     }
 
-    // Analyze the video frame with Gemini Vision
+    // Use GOOD Gemini model for vision (gemini-2.5-flash is best for images)
     const { GoogleGenerativeAI } = await import('@google/generative-ai')
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
-
+    
+    // Try gemini-2.5-flash first (best vision), fallback to others if rate limited
+    const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro']
+    let analysis = null
+    
     const imageData = videoFrame.replace(/^data:image\/\w+;base64,/, '')
     
-    const result = await model.generateContent([
-      {
-        text: `Analyze this emergency scene image and describe:
-1. What you see happening
-2. Any threats, weapons, or dangerous situations
-3. Any injuries or people in distress
-4. Number of people visible
-5. Any important details for emergency responders
-
-Be concise and focus on safety-relevant information.`
-      },
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: imageData
+    for (const modelName of visionModels) {
+      try {
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: {
+            maxOutputTokens: 100,
+            temperature: 0.1,  // Low temperature for factual descriptions
+          }
+        })
+        
+        const result = await model.generateContent([
+          {
+            text: `You are analyzing a live video frame for a 9111 emergency call. 
+ONLY describe what you can CLEARLY see. Do NOT make assumptions or guess.
+If the image is unclear, say "Image unclear".
+Describe: people visible, their actions, any objects, the setting. Be factual and brief (1-2 sentences).`
+          },
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: imageData
+            }
+          }
+        ])
+        
+        analysis = result.response.text().trim()
+        console.log(`Vision analysis with ${modelName}:`, analysis.substring(0, 100))
+        break  // Success, exit loop
+      } catch (e) {
+        console.log(`${modelName} failed:`, e.message.substring(0, 50))
+        if (!e.message.includes('429')) {
+          // Not a rate limit error, don't try other models
+          break
         }
+        // Rate limited, try next model
       }
-    ])
-
-    const analysis = result.response.text()
+    }
+    
+    if (!analysis) {
+      return res.status(503).json({ 
+        error: 'Vision models unavailable', 
+        message: 'All Gemini vision models are rate limited. Try again later.' 
+      })
+    }
     
     // Update context with new analysis
     callData.context.videoAnalysis = analysis
@@ -688,5 +773,350 @@ router.post('/synthesize-speech', authenticateToken, async (req, res) => {
   }
 })
 
+// Analyze video clip using TwelveLabs (accurate but takes 30-60 seconds)
+router.post('/analyze-video-twelvelabs', authenticateToken, async (req, res) => {
+  try {
+    const { videoData } = req.body // base64 encoded video
+    const userId = req.user.id
+    const callData = activeEmergencyCalls.get(userId)
+
+    if (!videoData) {
+      return res.status(400).json({ error: 'No video data provided' })
+    }
+
+    // Notify that analysis is starting
+    res.json({ 
+      status: 'processing',
+      message: 'Video analysis started. This may take 30-60 seconds...'
+    })
+
+    // Save video to temp file
+    const uploadsDir = path.join(__dirname, '..', 'uploads')
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true })
+    }
+    
+    const filename = `emergency_${userId}_${Date.now()}.webm`
+    const filepath = path.join(uploadsDir, filename)
+    
+    // Decode base64 and save
+    const videoBuffer = Buffer.from(videoData.replace(/^data:video\/\w+;base64,/, ''), 'base64')
+    fs.writeFileSync(filepath, videoBuffer)
+    
+    console.log('Saved video for TwelveLabs analysis:', filepath)
+
+    // Run TwelveLabs analysis
+    const analysis = await quickAnalyzeVideo(filepath)
+    
+    if (analysis) {
+      // Update call context if there's an active call
+      if (callData) {
+        const analysisText = analysis.analysis || analysis.summary || JSON.stringify(analysis.gist)
+        callData.context.videoAnalysis = analysisText
+        callData.context.lastVideoUpdate = new Date().toISOString()
+        
+        // Add to transcript
+        callData.transcript.push({
+          role: 'system',
+          content: `[TwelveLabs Video Analysis] ${analysisText}`,
+          timestamp: new Date().toISOString()
+        })
+      }
+
+      // Clean up temp file
+      try { fs.unlinkSync(filepath) } catch (e) {}
+      
+      return // Already sent response
+    } else {
+      console.error('TwelveLabs analysis returned null')
+      return // Already sent response
+    }
+
+  } catch (error) {
+    console.error('TwelveLabs video analysis error:', error)
+    // Response already sent, just log
+  }
+})
+
+// Get TwelveLabs analysis result (poll this after starting analysis)
+router.get('/video-analysis-status', authenticateToken, (req, res) => {
+  const userId = req.user.id
+  const callData = activeEmergencyCalls.get(userId)
+  
+  if (!callData) {
+    return res.json({ status: 'no_call', analysis: null })
+  }
+  
+  res.json({
+    status: callData.context.videoAnalysis ? 'ready' : 'pending',
+    analysis: callData.context.videoAnalysis,
+    lastUpdate: callData.context.lastVideoUpdate
+  })
+})
+
+// Call safety contacts automatically
+router.post('/call-safety-contacts', authenticateToken, async (req, res) => {
+  try {
+    const { reason, location, additionalInfo } = req.body
+    const userId = req.user.id
+
+    if (!reason) {
+      return res.status(400).json({ error: 'Reason for call is required' })
+    }
+
+    // Get user info
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    
+    // Get safety contacts (notify_on_stream = 1 or type = 'emergency')
+    const contacts = db.prepare(
+      "SELECT * FROM contacts WHERE user_id = ? AND (notify_on_stream = 1 OR type = 'emergency') AND phone IS NOT NULL"
+    ).all(userId)
+
+    if (contacts.length === 0) {
+      return res.status(400).json({ error: 'No safety contacts found with phone numbers' })
+    }
+
+    // Get user's medical info
+    const medicalInfo = db.prepare('SELECT * FROM medical_info WHERE user_id = ?').get(userId)
+
+    // Get all contacts for context
+    const allContacts = db.prepare('SELECT * FROM contacts WHERE user_id = ?').all(userId)
+
+    // Build user data context
+    const userData = {
+      medical: medicalInfo || null,
+      contacts: allContacts.map(c => ({ name: c.name, phone: c.phone, type: c.type }))
+    }
+
+    const twilioClient = getTwilioClient()
+    const twilioNumber = process.env.TWILIO_PHONE_NUMBER
+
+    if (!twilioClient || !twilioNumber) {
+      return res.status(503).json({ error: 'Twilio not configured. Cannot make calls.' })
+    }
+
+    const locationStr = location?.address || 
+      (location?.lat ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : 'Location unknown')
+
+    // Build context info string for AI
+    let contextInfo = `Calling about: ${user.name || 'the user'}. Reason: ${reason}. Location: ${locationStr}`
+    
+    if (medicalInfo) {
+      if (medicalInfo.blood_type) contextInfo += `, Blood Type: ${medicalInfo.blood_type}`
+      if (medicalInfo.allergies) contextInfo += `, Allergies: ${JSON.parse(medicalInfo.allergies || '[]').join(', ')}`
+      if (medicalInfo.conditions) contextInfo += `, Conditions: ${JSON.parse(medicalInfo.conditions || '[]').join(', ')}`
+      if (medicalInfo.medications) contextInfo += `, Medications: ${JSON.parse(medicalInfo.medications || '[]').join(', ')}`
+    }
+
+    if (additionalInfo) {
+      contextInfo += `, Additional info: ${additionalInfo}`
+    }
+
+    const callResults = []
+    const serverUrl = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3001}`
+
+    // Make calls to each safety contact
+    for (const contact of contacts) {
+      try {
+        const callId = `safety_${Date.now()}_${userId}_${contact.id}`
+        
+        // Build message for this contact
+        const message = `Hello, this is an AI assistant calling on behalf of ${user.name || 'someone'}. 
+${reason}. 
+${user.name || 'The person'} is located at ${locationStr}.
+${additionalInfo ? `Additional information: ${additionalInfo}` : ''}
+I can answer any questions you have. How can I help?`
+
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Google.en-US-Neural2-D">${message}</Say>
+  <Gather input="speech" timeout="8" speechTimeout="auto" speechModel="phone_call" language="en-US" hints="help, yes, no, where, what, when, how, location, okay" action="${serverUrl}/api/emergency/gather-safety/${callId}" method="POST"/>
+  <Redirect>${serverUrl}/api/emergency/gather-safety/${callId}?timeout=true</Redirect>
+</Response>`
+
+        const call = await twilioClient.calls.create({
+          to: contact.phone,
+          from: twilioNumber,
+          twiml: twiml,
+          statusCallback: `${serverUrl}/api/emergency/call-status-safety/${callId}`,
+          statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed']
+        })
+
+        // Store call context for AI responses
+        activeSafetyContactCalls.set(callId, {
+          callId,
+          userId,
+          contactId: contact.id,
+          contactName: contact.name,
+          context: {
+            userName: user.name || 'Unknown',
+            location: location || { address: 'Location unknown' },
+            reason,
+            additionalInfo: additionalInfo || '',
+            userData,
+            contextInfo,
+            twilioCallSid: call.sid,
+            startTime: new Date().toISOString()
+          },
+          transcript: []
+        })
+
+        callResults.push({
+          contactId: contact.id,
+          contactName: contact.name,
+          phone: contact.phone,
+          callSid: call.sid,
+          status: 'initiated'
+        })
+
+        console.log(`Safety contact call initiated: ${contact.name} (${contact.phone}) - ${call.sid}`)
+      } catch (err) {
+        console.error(`Failed to call ${contact.name}:`, err.message)
+        callResults.push({
+          contactId: contact.id,
+          contactName: contact.name,
+          phone: contact.phone,
+          status: 'failed',
+          error: err.message
+        })
+      }
+    }
+
+    res.json({
+      success: true,
+      calls: callResults,
+      message: `Initiated ${callResults.filter(c => c.status === 'initiated').length} call(s)`
+    })
+
+  } catch (error) {
+    console.error('Safety contact call error:', error)
+    res.status(500).json({ error: 'Failed to call safety contacts', details: error.message })
+  }
+})
+
+// Handle speech input from safety contact call (similar to 911 gather)
+router.post('/gather-safety/:callId', async (req, res) => {
+  try {
+    const { callId } = req.params
+    const { SpeechResult, Confidence, Digits } = req.body
+    const isTimeout = req.query.timeout === 'true'
+    
+    console.log(`Safety gather received for ${callId}:`, { SpeechResult, Confidence, Digits, isTimeout })
+
+    const callData = activeSafetyContactCalls.get(callId)
+
+    if (!callData) {
+      res.type('text/xml')
+      res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Google.en-US-Neural2-D">I've lost the call context. Thank you for your time. Goodbye.</Say>
+  <Hangup/>
+</Response>`)
+      return
+    }
+
+    const context = callData.context
+    const serverUrl = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3001}`
+
+    // Handle timeout
+    if (isTimeout && !SpeechResult && !Digits) {
+      res.type('text/xml')
+      res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" timeout="8" speechTimeout="auto" speechModel="phone_call" language="en-US" hints="yes, no, location, help" action="${serverUrl}/api/emergency/gather-safety/${callId}" method="POST">
+    <Say voice="Google.en-US-Neural2-D">I'm still here if you need anything.</Say>
+  </Gather>
+  <Say voice="Google.en-US-Neural2-D">Thank you for your time. Goodbye.</Say>
+  <Hangup/>
+</Response>`)
+      return
+    }
+
+    const userInput = SpeechResult || (Digits ? `(pressed ${Digits})` : '(no speech detected)')
+
+    // Add to transcript
+    callData.transcript.push({
+      role: 'contact',
+      content: userInput,
+      timestamp: new Date().toISOString()
+    })
+
+    // Generate AI response using context
+    let aiResponse = "I understand. Thank you for the information."
+    
+    try {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai')
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+      const model = genAI.getGenerativeModel({ 
+        model: 'gemma-3-4b-it',
+        generationConfig: {
+          maxOutputTokens: 50,
+          temperature: 0.3,
+        }
+      })
+
+      const prompt = `You are an AI assistant calling a safety contact about ${context.userName}.
+CONTEXT: ${context.contextInfo}
+
+This is ${context.contactName}, a safety contact for ${context.userName}.
+The contact asks: "${userInput}"
+
+Answer helpfully using the context. One short sentence only.
+
+You:`
+
+      const result = await model.generateContent(prompt)
+      aiResponse = result.response.text().trim().split('\n')[0].substring(0, 200)
+    } catch (e) {
+      console.error('AI response generation failed:', e)
+    }
+
+    // Add AI response to transcript
+    callData.transcript.push({
+      role: 'ai',
+      content: aiResponse,
+      timestamp: new Date().toISOString()
+    })
+
+    // Send TwiML response
+    res.type('text/xml')
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Google.en-US-Neural2-D">${aiResponse.replace(/[<>&'"]/g, '')}</Say>
+  <Gather input="speech" timeout="8" speechTimeout="auto" speechModel="phone_call" language="en-US" hints="yes, no, where, what, when, help" action="${serverUrl}/api/emergency/gather-safety/${callId}" method="POST"/>
+  <Redirect>${serverUrl}/api/emergency/gather-safety/${callId}?timeout=true</Redirect>
+</Response>`)
+
+  } catch (error) {
+    console.error('Safety gather handler error:', error)
+    res.type('text/xml')
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Google.en-US-Neural2-D">Thank you for your time. Goodbye.</Say>
+  <Hangup/>
+</Response>`)
+  }
+})
+
+// Safety contact call status webhook
+router.post('/call-status-safety/:callId', (req, res) => {
+  const { callId } = req.params
+  const { CallStatus, CallDuration } = req.body
+  
+  console.log(`Safety call ${callId} status: ${CallStatus}`)
+  
+  const callData = activeSafetyContactCalls.get(callId)
+  if (callData) {
+    if (CallStatus === 'completed' || CallStatus === 'failed' || CallStatus === 'busy' || CallStatus === 'no-answer') {
+      // Clean up after 5 minutes
+      setTimeout(() => {
+        activeSafetyContactCalls.delete(callId)
+      }, 300000)
+    }
+  }
+  
+  res.status(200).send('OK')
+})
+
 export default router
-export { activeEmergencyCalls }
+export { activeEmergencyCalls, activeSafetyContactCalls }

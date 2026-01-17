@@ -391,6 +391,38 @@
   color: white;
 }
 
+.duration-btn.custom {
+  border-style: dashed;
+}
+
+.custom-input-group {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.custom-time-input {
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.custom-time-input:focus {
+  outline: none;
+  border-color: var(--danger-primary);
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
 .modal-actions {
   display: flex;
   gap: 12px;

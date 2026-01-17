@@ -164,9 +164,30 @@ const api = {
       body: JSON.stringify(data)
     }).then(handleResponse),
 
+  // TwelveLabs video analysis (accurate but takes 30-60 seconds)
+  analyzeVideoTwelveLabs: (videoData) =>
+    fetch(`${API_URL}/emergency/analyze-video-twelvelabs`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ videoData })
+    }).then(handleResponse),
+
+  getVideoAnalysisStatus: () =>
+    fetch(`${API_URL}/emergency/video-analysis-status`, {
+      headers: getHeaders()
+    }).then(handleResponse),
+
   getEmergencyConfigStatus: () =>
     fetch(`${API_URL}/emergency/config-status`, {
       headers: getHeaders()
+    }).then(handleResponse),
+
+  // Call safety contacts automatically
+  callSafetyContacts: (data) =>
+    fetch(`${API_URL}/emergency/call-safety-contacts`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
     }).then(handleResponse),
 
   uploadRecording: async (videoBlob, metadata) => {

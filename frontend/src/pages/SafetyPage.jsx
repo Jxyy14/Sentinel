@@ -5,6 +5,7 @@ import {
   Briefcase, User, Timer, Plus, X, Check
 } from 'lucide-react'
 import { Conversation } from '@11labs/client'
+import { callSafetyContacts, CallReasons } from '../services/safetyContactCalls'
 import './SafetyPage.css'
 
 const tabs = [
@@ -51,6 +52,10 @@ export default function SafetyPage() {
   const [activeCheckIns, setActiveCheckIns] = useState([])
   const [showCreateCheckIn, setShowCreateCheckIn] = useState(false)
   const [newCheckIn, setNewCheckIn] = useState({ name: '', duration: 30, escalationDelay: 5 })
+  const [showCustomDuration, setShowCustomDuration] = useState(false)
+  const [showCustomEscalation, setShowCustomEscalation] = useState(false)
+  const [customDuration, setCustomDuration] = useState('')
+  const [customEscalation, setCustomEscalation] = useState('')
   const [useAiVoice, setUseAiVoice] = useState(false)
   // Default to the Sentinel Public Agent
   const [agentId, setAgentId] = useState('agent_7401kf5b6y9je06v6r5vzqfbrp3r')
@@ -95,8 +100,17 @@ export default function SafetyPage() {
   const loadActiveCheckIns = () => {
     const stored = localStorage.getItem('checkIns')
     if (stored) {
-      const checkIns = JSON.parse(stored).filter(c => new Date(c.dueAt) > new Date())
+      const checkIns = JSON.parse(stored).filter(c => {
+        // Keep check-ins that haven't expired yet (including escalation delay)
+        const escalationTime = new Date(new Date(c.dueAt).getTime() + (c.escalationDelay || 5) * 60000)
+        return escalationTime > new Date()
+      })
       setActiveCheckIns(checkIns)
+      
+      // Schedule alerts for all active check-ins
+      checkIns.forEach(checkIn => {
+        scheduleCheckInAlert(checkIn)
+      })
     }
   }
 
@@ -176,6 +190,76 @@ export default function SafetyPage() {
     setActiveCheckIns(updated)
     localStorage.setItem('checkIns', JSON.stringify(updated))
     localStorage.setItem('activeCheckIn', JSON.stringify(checkIn))
+    
+    // Schedule alert for when check-in expires
+    scheduleCheckInAlert(checkIn)
+  }
+
+  const closeCheckInModal = () => {
+    setShowCreateCheckIn(false)
+    setNewCheckIn({ name: '', duration: 30, escalationDelay: 5 })
+    setShowCustomDuration(false)
+    setShowCustomEscalation(false)
+    setCustomDuration('')
+    setCustomEscalation('')
+  }
+
+  const handleCheckInExpired = async (checkIn) => {
+    // Call safety contacts instead of starting recording
+    console.log('Check-in expired without confirmation:', checkIn)
+    try {
+      // Get user's location
+      let location = null
+      try {
+        const position = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 5000
+          })
+        })
+        const lat = position.coords.latitude
+        const lng = position.coords.longitude
+        let address = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+        try {
+          const geoResponse = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
+          )
+          const geoData = await geoResponse.json()
+          if (geoData.display_name) address = geoData.display_name
+        } catch (e) {}
+        location = { lat, lng, address }
+      } catch (e) {
+        location = { address: 'Location unknown' }
+      }
+
+      await callSafetyContacts({
+        reason: `${CallReasons.CHECKIN_MISSED}. Check-in "${checkIn.name || 'Check-in'}" was due ${checkIn.duration || 30} minutes ago and has not been confirmed.`,
+        location,
+        additionalInfo: `Expected check-in time was ${new Date(checkIn.dueAt).toLocaleTimeString()}. User has not confirmed they are safe.`
+      })
+    } catch (error) {
+      console.error('Failed to call safety contacts on check-in expiration:', error)
+    }
+  }
+
+  const scheduleCheckInAlert = (checkIn) => {
+    const escalationTime = new Date(new Date(checkIn.dueAt).getTime() + checkIn.escalationDelay * 60000)
+    const timeUntilEscalation = escalationTime.getTime() - Date.now()
+
+    if (timeUntilEscalation > 0) {
+      setTimeout(async () => {
+        // Check if check-in still exists and hasn't been confirmed
+        const stored = localStorage.getItem('checkIns')
+        if (stored) {
+          const checkIns = JSON.parse(stored)
+          const found = checkIns.find(c => c.id === checkIn.id)
+          if (found) {
+            // Check-in expired - call safety contacts
+            handleCheckInExpired(checkIn)
+          }
+        }
+      }, timeUntilEscalation)
+    }
   }
 
   const createCustomCheckIn = () => {
@@ -193,8 +277,10 @@ export default function SafetyPage() {
     setActiveCheckIns(updated)
     localStorage.setItem('checkIns', JSON.stringify(updated))
     localStorage.setItem('activeCheckIn', JSON.stringify(checkIn))
-    setShowCreateCheckIn(false)
-    setNewCheckIn({ name: '', duration: 30, escalationDelay: 5 })
+    closeCheckInModal()
+    
+    // Schedule alert for when check-in expires
+    scheduleCheckInAlert(checkIn)
   }
 
   const confirmCheckIn = (id) => {
@@ -436,7 +522,7 @@ export default function SafetyPage() {
           </button>
 
           {showCreateCheckIn && (
-            <div className="modal-overlay" onClick={() => setShowCreateCheckIn(false)}>
+            <div className="modal-overlay" onClick={closeCheckInModal}>
               <div className="modal" onClick={e => e.stopPropagation()}>
                 <h2 className="modal-title">CREATE CHECK-IN</h2>
 
@@ -457,13 +543,48 @@ export default function SafetyPage() {
                     {[15, 30, 60, 120, 240].map(d => (
                       <button
                         key={d}
-                        className={`duration-btn ${newCheckIn.duration === d ? 'active' : ''}`}
-                        onClick={() => setNewCheckIn({ ...newCheckIn, duration: d })}
+                        className={`duration-btn ${newCheckIn.duration === d && !showCustomDuration ? 'active' : ''}`}
+                        onClick={() => {
+                          setShowCustomDuration(false)
+                          setNewCheckIn({ ...newCheckIn, duration: d })
+                        }}
                       >
                         {d < 60 ? `${d}m` : `${d / 60}h`}
                       </button>
                     ))}
+                    <button
+                      className={`duration-btn custom ${showCustomDuration ? 'active' : ''}`}
+                      onClick={() => {
+                        setShowCustomDuration(true)
+                        if (customDuration) {
+                          setNewCheckIn({ ...newCheckIn, duration: parseInt(customDuration) || 30 })
+                        }
+                      }}
+                    >
+                      Custom
+                    </button>
                   </div>
+                  {showCustomDuration && (
+                    <div className="custom-input-group">
+                      <input
+                        type="number"
+                        min="1"
+                        max="1440"
+                        placeholder="Minutes"
+                        value={customDuration}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setCustomDuration(val)
+                          const minutes = parseInt(val) || 0
+                          if (minutes > 0) {
+                            setNewCheckIn({ ...newCheckIn, duration: minutes })
+                          }
+                        }}
+                        className="custom-time-input"
+                      />
+                      <span className="input-hint">minutes (1-1440)</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -472,17 +593,52 @@ export default function SafetyPage() {
                     {[1, 5, 10, 15].map(d => (
                       <button
                         key={d}
-                        className={`duration-btn ${newCheckIn.escalationDelay === d ? 'active' : ''}`}
-                        onClick={() => setNewCheckIn({ ...newCheckIn, escalationDelay: d })}
+                        className={`duration-btn ${newCheckIn.escalationDelay === d && !showCustomEscalation ? 'active' : ''}`}
+                        onClick={() => {
+                          setShowCustomEscalation(false)
+                          setNewCheckIn({ ...newCheckIn, escalationDelay: d })
+                        }}
                       >
                         {d}m
                       </button>
                     ))}
+                    <button
+                      className={`duration-btn custom ${showCustomEscalation ? 'active' : ''}`}
+                      onClick={() => {
+                        setShowCustomEscalation(true)
+                        if (customEscalation) {
+                          setNewCheckIn({ ...newCheckIn, escalationDelay: parseInt(customEscalation) || 5 })
+                        }
+                      }}
+                    >
+                      Custom
+                    </button>
                   </div>
+                  {showCustomEscalation && (
+                    <div className="custom-input-group">
+                      <input
+                        type="number"
+                        min="1"
+                        max="120"
+                        placeholder="Minutes"
+                        value={customEscalation}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setCustomEscalation(val)
+                          const minutes = parseInt(val) || 0
+                          if (minutes > 0) {
+                            setNewCheckIn({ ...newCheckIn, escalationDelay: minutes })
+                          }
+                        }}
+                        className="custom-time-input"
+                      />
+                      <span className="input-hint">minutes (1-120)</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="modal-actions">
-                  <button className="btn btn-outline" onClick={() => setShowCreateCheckIn(false)}>
+                  <button className="btn btn-outline" onClick={closeCheckInModal}>
                     Cancel
                   </button>
                   <button className="btn btn-danger" onClick={createCustomCheckIn}>
