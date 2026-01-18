@@ -96,7 +96,7 @@ export default function TripPage() {
             }
 
             await callSafetyContacts({
-                reason: `${CallReasons.TRIP_EXPIRED}. Trip to ${trip.destination || 'destination'} expected ${trip.expectedMinutes || 30} minutes ago.`,
+                reason: `${CallReasons.TRIP_EXPIRED}. Trip to ${trip.destination || 'destination'} expected ${trip.expectedMinutes < 1 ? Math.round(trip.expectedMinutes * 60) + ' seconds' : Math.round(trip.expectedMinutes) + ' minutes'} ago.`,
                 location,
                 additionalInfo: `Expected arrival time was ${new Date(trip.expectedArrival).toLocaleTimeString()}. User has not confirmed arrival.`
             })
