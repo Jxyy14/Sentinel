@@ -34,11 +34,13 @@ const generateSpeechTwiML = async (text, callId) => {
 // Check if ElevenLabs has permission (cache the result)
 let elevenLabsHasPermission = null
 const checkElevenLabsPermission = async () => {
-  // TEMP DEBUG: Force disable ElevenLabs to fix "Application Error"
-  elevenLabsHasPermission = false
-  return false
-
   if (elevenLabsHasPermission !== null) return elevenLabsHasPermission
+
+  const elevenLabsKey = process.env.ELEVENLABS_API_KEY
+  if (!elevenLabsKey) {
+    elevenLabsHasPermission = false
+    return false
+  }
 
   try {
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL`, {
