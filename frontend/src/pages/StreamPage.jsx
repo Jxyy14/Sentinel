@@ -586,10 +586,10 @@ export default function StreamPage() {
           <>
             <div className="recording-overlay">
               <div className="rec-indicator">
-                <span className="rec-dot" />
-                <span>REC</span>
+                <div className="rec-dot" />
+                YOU ARE BEING RECORDED
               </div>
-              <span className="duration">{formatTime(duration)}</span>
+              <div className="duration">{formatTime(duration)}</div>
             </div>
 
             {location && (
