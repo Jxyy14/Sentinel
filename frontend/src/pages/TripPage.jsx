@@ -16,7 +16,7 @@ export default function TripPage() {
     const [activeTrip, setActiveTrip] = useState(null)
     const [trips, setTrips] = useState([])
     const [contacts, setContacts] = useState([])
-    const [showNewTrip, setShowNewTrip] = useState(false)
+    const [showNewTrip, setShowNewTrip] = useState(true)
     const [loading, setLoading] = useState(true)
 
     // New trip form
@@ -127,14 +127,13 @@ export default function TripPage() {
 
         localStorage.setItem('activeTrip', JSON.stringify(newTrip))
         setActiveTrip(newTrip)
-        closeTripModal()
+        resetForm()
 
         // Start countdown timer
         scheduleAlerts(newTrip)
     }
 
-    const closeTripModal = () => {
-        setShowNewTrip(false)
+    const resetForm = () => {
         setDestination('')
         setSelectedContacts([])
         setExpectedMinutes(30)
@@ -298,9 +297,17 @@ export default function TripPage() {
                         <span>If you don't confirm arrival by {formatTime(activeTrip.alertTime)}, your emergency contacts will be notified automatically.</span>
                     </div>
                 </div>
-            ) : showNewTrip ? (
+            ) : (
                 <div className="new-trip-form">
                     <h3>NEW TRIP</h3>
+
+                    <div className="trip-form-header mb-4">
+                        <p className="text-muted text-sm mb-2">Track your journey and auto-alert if you don't arrive</p>
+                        <div className="info-banner info">
+                            <Navigation size={16} />
+                            <span>Trip tracking automatically alerts your emergency contacts if you don't confirm arrival on time.</span>
+                        </div>
+                    </div>
 
                     <div className="form-group">
                         <label className="label">DESTINATION</label>
@@ -470,38 +477,21 @@ export default function TripPage() {
                     </div>
 
                     <div className="form-actions">
-                        <button className="btn btn-outline" onClick={closeTripModal}>
-                            CANCEL
-                        </button>
+                        {/* Cancel button removed as per combining pages logic, or reset form could be here */}
                         <button
                             className="btn btn-danger"
                             onClick={startTrip}
                             disabled={!destination.trim()}
+                            style={{ width: '100%' }}
                         >
                             <Play size={18} />
                             START TRIP
                         </button>
                     </div>
                 </div>
-            ) : (
-                <>
-                    <button className="start-trip-btn" onClick={() => setShowNewTrip(true)}>
-                        <div className="btn-content">
-                            <Navigation size={32} />
-                            <span className="btn-title">START A TRIP</span>
-                            <span className="btn-desc">Track your journey and auto-alert if you don't arrive</span>
-                        </div>
-                        <ChevronRight size={24} />
-                    </button>
-
-                    <div className="info-banner info" style={{ marginTop: '16px' }}>
-                        <Bell size={16} />
-                        <span>Trip tracking automatically alerts your emergency contacts if you don't confirm arrival on time.</span>
-                    </div>
-                </>
             )}
 
-            {trips.length > 0 && !showNewTrip && (
+            {trips.length > 0 && !activeTrip && (
                 <section className="trip-history">
                     <h3 className="section-title">RECENT TRIPS</h3>
                     {trips.slice(-5).reverse().map(trip => (

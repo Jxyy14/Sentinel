@@ -1,21 +1,21 @@
 import { useState, useEffect } from 'react'
-import { 
-  Users, Shield, AlertTriangle, User, UserPlus, Building2, 
+import {
+  Users, Shield, AlertTriangle, User, UserPlus, Building2,
   Phone, Plus, X, Trash2
 } from 'lucide-react'
 import api from '../services/api'
 import './ContactsPage.css'
 
 const contactTypes = [
-  { id: 'personal', label: 'Personal', icon: User, color: 'default' },
-  { id: 'emergency', label: 'Emergency', icon: AlertTriangle, color: 'warning' },
-  { id: 'police', label: 'Police', icon: Shield, color: 'info' }
+  { id: 'personal', label: 'Personal', icon: User, color: 'success' },
+  { id: 'emergency', label: 'Emergency', icon: AlertTriangle, color: 'danger' },
+  { id: 'police', label: 'Police', icon: Shield, color: 'warning' }
 ]
 
 const quickAddOptions = [
-  { type: 'police', label: 'Add Police Contact', icon: Shield, color: 'info' },
-  { type: 'emergency', label: 'Add Emergency Service', icon: Building2, color: 'warning' },
-  { type: 'personal', label: 'Add Family/Friend', icon: UserPlus, color: 'default' }
+  { type: 'police', label: 'Add Police Contact', icon: Shield, color: 'warning' },
+  { type: 'emergency', label: 'Add Emergency Service', icon: Building2, color: 'danger' },
+  { type: 'personal', label: 'Add Family/Friend', icon: UserPlus, color: 'success' }
 ]
 
 export default function ContactsPage() {
@@ -42,7 +42,7 @@ export default function ContactsPage() {
 
   const addContact = async () => {
     if (!newContact.name || !newContact.phone) return
-    
+
     try {
       await api.addContact({
         name: newContact.name,
@@ -105,7 +105,7 @@ export default function ContactsPage() {
         {contacts.map(contact => {
           const Icon = getContactIcon(contact.type)
           const color = getContactColor(contact.type)
-          
+
           return (
             <div key={contact.id} className="contact-card">
               <div className={`contact-icon ${color}`}>
@@ -122,7 +122,7 @@ export default function ContactsPage() {
                 {contact.type}
               </span>
               {!contact.is_default && (
-                <button 
+                <button
                   className="btn-icon delete-btn"
                   onClick={() => deleteContact(contact.id)}
                 >
@@ -152,7 +152,7 @@ export default function ContactsPage() {
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h2 className="modal-title">ADD CONTACT</h2>
-            
+
             <div className="form-group">
               <label className="label">Type</label>
               <div className="type-buttons">

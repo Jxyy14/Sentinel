@@ -27,6 +27,33 @@
   border-radius: 12px;
 }
 
+.settings-group {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.settings-group .setting-card {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+}
+
+.settings-group .setting-card:last-child {
+  border-bottom: none;
+}
+
+.settings-group .setting-sub-options {
+  padding: 0 16px 16px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-group .setting-sub-options:last-child {
+  border-bottom: none;
+}
+
 .setting-info {
   display: flex;
   align-items: flex-start;
@@ -173,4 +200,11 @@
   letter-spacing: 2px;
   color: var(--text-muted);
 }
-
+.practice-btn {
+  padding: 8px 16px !important;
+  font-size: 0.75rem !important;
+  min-width: 140px;
+  height: 36px;
+  white-space: nowrap;
+  letter-spacing: 1px;
+}

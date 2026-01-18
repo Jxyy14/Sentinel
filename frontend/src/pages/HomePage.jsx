@@ -274,14 +274,11 @@ export default function HomePage() {
             <span className="stat-label">Saved Recordings</span>
           </div>
         </button>
-        <button className="stat-card safety-score-mini" onClick={() => navigate('/safety-score')}>
+        <button className="stat-card" onClick={() => navigate('/safety-score')}>
           <Award size={24} />
           <div className="stat-info">
             <span className="stat-value">{safetyData.contacts >= 2 ? 20 : 0 + safetyData.hasMedical ? 15 : 0 + safetyData.safeLocations >= 1 ? 15 : 0 + safetyData.practiceRuns >= 1 ? 20 : 0 + safetyData.checkIns >= 1 ? 15 : 0 + safetyData.trips >= 1 ? 15 : 0}</span>
             <span className="stat-label">Safety Score</span>
-          </div>
-          <div className="mini-progress-bar">
-            <div className="mini-progress-fill" style={{ width: `${(safetyData.contacts >= 2 ? 20 : 0) + (safetyData.hasMedical ? 15 : 0) + (safetyData.safeLocations >= 1 ? 15 : 0) + (safetyData.practiceRuns >= 1 ? 20 : 0) + (safetyData.checkIns >= 1 ? 15 : 0) + (safetyData.trips >= 1 ? 15 : 0)}%` }} />
           </div>
         </button>
       </div>
@@ -297,7 +294,7 @@ export default function HomePage() {
           <Volume2 size={18} />
           <span>Say "Emergency" to activate</span>
         </div>
-        {settings?.enable_silent_sos && (
+        {!!settings?.enable_silent_sos && (
           <div className="activation-item active">
             <EyeOff size={18} />
             <span>Hold SOS for silent mode</span>

@@ -16,7 +16,7 @@ const tabs = [
 ]
 
 const fakeCallScenarios = [
-  { id: 'uber', name: 'Uber/Ride is here', emoji: '🚗', icon: Car, number: 'Uber Driver' },
+  { id: 'generic', name: 'Incoming Call', emoji: '📞', icon: PhoneCall, number: 'Unknown Number' },
   { id: 'emergency', name: 'Emergency at home', emoji: '🏠', icon: HomeIcon, number: 'Home' },
   { id: 'work', name: 'Urgent work call', emoji: '💼', icon: Briefcase, number: 'Work' },
   { id: 'mom', name: 'Mom calling', emoji: '👩', icon: User, number: 'Mom' },

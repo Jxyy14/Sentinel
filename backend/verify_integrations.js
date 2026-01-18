@@ -31,13 +31,13 @@ async function verifyGemini() {
         // usually it's via API call or specific method. 
         // Let's try a known stable model 'gemini-pro' first if flash fails.
         */
-        console.log('Attempting with gemini-pro...')
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" })
+        console.log('Attempting with gemma-3-4b-it...')
+        const model = genAI.getGenerativeModel({ model: "gemma-3-4b-it" })
         const result = await model.generateContent("Hello")
         const response = await result.response
-        console.log('✅ Gemini Success: Generated response with gemini-pro', response.text().substring(0, 20) + '...')
+        console.log('✅ Gemini Success: Generated response with gemma-3-4b-it', response.text().substring(0, 20) + '...')
     } catch (error) {
-        console.error('❌ Gemini Error (gemini-pro):', error.message)
+        console.error('❌ Gemini Error (gemma-3-4b-it):', error.message)
 
         // Try listing models via fetch if SDK fails
         try {

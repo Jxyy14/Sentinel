@@ -176,3 +176,57 @@
   border: 1px solid var(--border-color);
 }
 
+
+/* Danger Styles (Red) */
+.contact-icon.danger {
+  background: rgba(255, 23, 68, 0.15);
+  color: var(--danger-primary);
+}
+
+.quick-add-card.danger {
+  color: var(--danger-primary);
+}
+
+.quick-add-card.danger:hover {
+  border-color: var(--danger-primary);
+  background: rgba(255, 23, 68, 0.1);
+}
+
+.type-btn.active.danger {
+  border-color: var(--danger-primary);
+  background: rgba(255, 23, 68, 0.15);
+  color: var(--danger-primary);
+}
+
+.badge-danger {
+  background: rgba(255, 23, 68, 0.1);
+  color: var(--danger-primary);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+}
+
+/* Success Styles (Green) */
+.contact-icon.success {
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--safe-primary);
+}
+
+.quick-add-card.success {
+  color: var(--safe-primary);
+}
+
+.quick-add-card.success:hover {
+  border-color: var(--safe-primary);
+  background: rgba(0, 230, 118, 0.1);
+}
+
+.type-btn.active.success {
+  border-color: var(--safe-primary);
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--safe-primary);
+}
+
+.badge-success {
+  background: rgba(0, 230, 118, 0.1);
+  color: var(--safe-primary);
+  border: 1px solid rgba(0, 230, 118, 0.3);
+}
