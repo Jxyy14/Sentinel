@@ -441,20 +441,20 @@ export default function SafetyPage() {
             </div>
           </div>
 
-          <div className="fake-call-main-action">
-            <button
-              className="start-call-btn"
-              onClick={() => startFakeCall({ name: 'Incoming Call', number: 'Unknown', emoji: '📞' })}
-            >
-              <PhoneCall size={32} />
-              <span>START FAKE CALL</span>
-            </button>
-            <p className="fake-call-hint">
-              AI Agent is active. Speak naturally to guide the conversation.
-            </p>
-          </div>
+          <h3 className="section-title">START FAKE CALL</h3>
+          <p className="fake-call-hint">
+            AI Agent is active. Speak naturally to guide the conversation.
+          </p>
 
-          <h3 className="section-title">SCHEDULE CALL</h3>
+          <button
+            className="start-call-now-btn"
+            onClick={() => startFakeCall(fakeCallScenarios[0])}
+          >
+            <PhoneCall size={24} />
+            <span>CALL NOW</span>
+          </button>
+
+          <h3 className="section-title" style={{ marginTop: '24px' }}>OR SCHEDULE CALL</h3>
           <div className="schedule-options">
             {scheduleOptions.map(opt => (
               <button

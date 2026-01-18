@@ -35,13 +35,13 @@ const generateSpeechTwiML = async (text, callId) => {
 let elevenLabsHasPermission = null
 const checkElevenLabsPermission = async () => {
   if (elevenLabsHasPermission !== null) return elevenLabsHasPermission
-  
+
   const elevenLabsKey = process.env.ELEVENLABS_API_KEY
   if (!elevenLabsKey) {
     elevenLabsHasPermission = false
     return false
   }
-  
+
   try {
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL`, {
       method: 'POST',
@@ -54,7 +54,7 @@ const checkElevenLabsPermission = async () => {
         model_id: 'eleven_turbo_v2_5'
       })
     })
-    
+
     elevenLabsHasPermission = response.ok
     if (!response.ok) {
       const error = await response.text()
@@ -64,7 +64,7 @@ const checkElevenLabsPermission = async () => {
     console.error('[TTS] ElevenLabs permission check error:', error.message)
     elevenLabsHasPermission = false
   }
-  
+
   return elevenLabsHasPermission
 }
 
@@ -76,7 +76,7 @@ router.get('/tts/:callId/:textHash', async (req, res) => {
   try {
     const { callId, textHash } = req.params
     const { text } = req.query
-    
+
     if (!text) {
       return res.status(400).send('Text required')
     }
@@ -122,7 +122,7 @@ router.get('/tts/:callId/:textHash', async (req, res) => {
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`[TTS] ElevenLabs API error (${response.status}):`, errorText)
-      
+
       // Return empty audio with proper headers - Twilio will skip it
       // The calling code should use Twilio Say as fallback
       res.set('Content-Type', 'audio/mpeg')
@@ -132,9 +132,9 @@ router.get('/tts/:callId/:textHash', async (req, res) => {
 
     const audioBuffer = await response.arrayBuffer()
     const audio = Buffer.from(audioBuffer)
-    
+
     console.log(`[TTS] Generated audio: ${audio.length} bytes for callId: ${callId}`)
-    
+
     // Cache for 5 minutes
     ttsCache.set(cacheKey, audio)
     setTimeout(() => ttsCache.delete(cacheKey), 300000)
@@ -160,26 +160,26 @@ const activeEmergencyCalls = new Map()
 const analyzeVideoFrameWithGemini = async (videoFrame) => {
   try {
     if (!videoFrame) return null
-    
+
     const { GoogleGenerativeAI } = await import('@google/generative-ai')
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    
+
     // Use good Gemini model for vision (gemini-2.5-flash is best for images)
     const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro']
     let analysis = null
-    
+
     const imageData = videoFrame.replace(/^data:image\/\w+;base64,/, '')
-    
+
     for (const modelName of visionModels) {
       try {
-        const model = genAI.getGenerativeModel({ 
+        const model = genAI.getGenerativeModel({
           model: modelName,
           generationConfig: {
             maxOutputTokens: 100,
             temperature: 0.1,  // Low temperature for factual descriptions
           }
         })
-        
+
         const result = await model.generateContent([
           {
             text: `You are analyzing a live video frame for a 9111 emergency call. 
@@ -194,7 +194,7 @@ Describe: people visible, their actions, any objects, the setting. Be factual an
             }
           }
         ])
-        
+
         analysis = result.response.text().trim()
         console.log(`[Video Analysis] ${modelName}:`, analysis.substring(0, 100))
         break  // Success, exit loop
@@ -206,7 +206,7 @@ Describe: people visible, their actions, any objects, the setting. Be factual an
         // Rate limited, try next model
       }
     }
-    
+
     return analysis
   } catch (error) {
     console.error('[Video Analysis] Error:', error.message)
@@ -319,30 +319,30 @@ router.post('/call', authenticateToken, async (req, res) => {
   try {
     const { location, situation, videoFrame, userData } = req.body
     const userId = req.user.id
-    
+
     // Analyze initial video frame using GOOD Gemini model
     let videoAnalysis = null
     if (videoFrame) {
       try {
         const { GoogleGenerativeAI } = await import('@google/generative-ai')
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-        
+
         // Try good vision models
         const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash']
         const imageData = videoFrame.replace(/^data:image\/\w+;base64,/, '')
-        
+
         for (const modelName of visionModels) {
           try {
-            const model = genAI.getGenerativeModel({ 
+            const model = genAI.getGenerativeModel({
               model: modelName,
               generationConfig: { maxOutputTokens: 80, temperature: 0.1 }
             })
-            
+
             const result = await model.generateContent([
               { text: 'Describe this scene for 9111 in one factual sentence. Only describe what you clearly see.' },
               { inlineData: { mimeType: 'image/jpeg', data: imageData } }
             ])
-            
+
             videoAnalysis = result.response.text().trim()
             console.log(`Initial video analysis (${modelName}):`, videoAnalysis)
             break
@@ -359,7 +359,7 @@ router.post('/call', authenticateToken, async (req, res) => {
     if (activeEmergencyCalls.has(userId)) {
       const existingCall = activeEmergencyCalls.get(userId)
       const callAge = Date.now() - new Date(existingCall.context.startTime).getTime()
-      
+
       // If call is older than 2 minutes, auto-cleanup
       if (callAge > 120000) {
         console.log('Auto-cleaning stale call')
@@ -373,7 +373,7 @@ router.post('/call', authenticateToken, async (req, res) => {
         }
         activeEmergencyCalls.delete(userId)
       } else {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Emergency call already in progress',
           callId: existingCall.callId,
           hint: 'Use /api/emergency/force-reset to reset'
@@ -397,7 +397,7 @@ router.post('/call', authenticateToken, async (req, res) => {
     }
 
     const callId = `call_${Date.now()}_${userId}`
-    
+
     // Check if ElevenLabs and Twilio are configured for real AI voice calls
     const elevenLabsKey = process.env.ELEVENLABS_API_KEY
     const twilioClient = getTwilioClient()
@@ -406,11 +406,11 @@ router.post('/call', authenticateToken, async (req, res) => {
     if (twilioClient && twilioNumber) {
       try {
         const serverUrl = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3001}`
-        
+
         // Build concise emergency message
-        const locationStr = emergencyContext.location?.address || 
+        const locationStr = emergencyContext.location?.address ||
           (emergencyContext.location?.lat ? `${emergencyContext.location.lat.toFixed(4)}, ${emergencyContext.location.lng.toFixed(4)}` : 'unknown location')
-        
+
         const userName = emergencyContext.userName || 'a person'
         const emergencyMessage = `This is a test call. I'm an AI calling on behalf of ${userName}, located at ${locationStr}. They are unable to speak and requested this call. How can I help?`
         const gatherPrompt = "Please tell me your questions and I will try to help."
@@ -418,7 +418,7 @@ router.post('/call', authenticateToken, async (req, res) => {
         // Use ElevenLabs TTS if available, otherwise fallback to Twilio Say
         const emergencySpeech = await generateSpeechTwiML(emergencyMessage, callId)
         const gatherSpeech = await generateSpeechTwiML(gatherPrompt, callId)
-        
+
         const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${emergencySpeech}
@@ -427,9 +427,9 @@ router.post('/call', authenticateToken, async (req, res) => {
   </Gather>
   <Redirect>${serverUrl}/api/emergency/gather/${callId}?timeout=true</Redirect>
 </Response>`
-        
+
         const call = await twilioClient.calls.create({
-          to: EMERGENCY_TEST_NUMBER,
+          to: user.phone || EMERGENCY_TEST_NUMBER,
           from: twilioNumber,
           twiml: twiml,
           statusCallback: `${serverUrl}/api/emergency/call-status/${callId}`,
@@ -438,7 +438,7 @@ router.post('/call', authenticateToken, async (req, res) => {
 
         emergencyContext.twilioCallSid = call.sid
         emergencyContext.callType = 'twilio-interactive'
-        
+
         console.log('Interactive Twilio call initiated:', call.sid)
       } catch (twilioError) {
         console.error('Twilio call failed:', twilioError.message)
@@ -460,19 +460,19 @@ router.post('/call', authenticateToken, async (req, res) => {
 
     // Generate initial AI greeting based on emergency context
     let initialMessage = `This is an AI emergency assistant calling on behalf of ${emergencyContext.userName}. `
-    
+
     if (emergencyContext.location?.address && emergencyContext.location.address !== 'Location unknown') {
       initialMessage += `The caller is located at ${emergencyContext.location.address}. `
     } else if (emergencyContext.location?.lat) {
       initialMessage += `The caller's GPS coordinates are ${emergencyContext.location.lat.toFixed(6)}, ${emergencyContext.location.lng.toFixed(6)}. `
     }
-    
+
     initialMessage += emergencyContext.situation
-    
+
     if (emergencyContext.videoAnalysis) {
       initialMessage += ` Based on video analysis: ${emergencyContext.videoAnalysis}`
     }
-    
+
     initialMessage += ` This is a TEST CALL for demonstration purposes.`
 
     // Update call status
@@ -506,9 +506,9 @@ router.post('/gather/:callId', async (req, res) => {
     const { callId } = req.params
     const { SpeechResult, Confidence, Digits } = req.body
     const isTimeout = req.query.timeout === 'true'
-    
+
     console.log(`Gather received for ${callId}:`, { SpeechResult, Confidence, Digits, isTimeout, body: req.body })
-    
+
     // Find the call context
     let callData = null
     let userId = null
@@ -563,28 +563,28 @@ router.post('/gather/:callId', async (req, res) => {
     // Detect if operator's question requires video analysis
     const videoKeywords = ['see', 'surroundings', 'people', 'person', 'anyone', 'anybody', 'scene', 'visible', 'look', 'describe', 'what do you see', 'can you see', 'are there', 'who is', 'what\'s around', 'environment', 'setting', 'background', 'area', 'room', 'location', 'around them', 'near them']
     const needsVideoAnalysis = videoKeywords.some(keyword => userInput.toLowerCase().includes(keyword))
-    
+
     console.log(`[Gather] Question: "${userInput.substring(0, 100)}" | Needs video: ${needsVideoAnalysis}`)
-    
+
     // Check if we need fresh video analysis (if question needs it and we don't have recent analysis)
     const lastVideoUpdate = context.lastVideoUpdate ? new Date(context.lastVideoUpdate) : null
     const videoAge = lastVideoUpdate ? (Date.now() - lastVideoUpdate.getTime()) / 1000 : Infinity
     const videoIsStale = videoAge > 30 // Consider video stale if older than 30 seconds
-    
+
     let videoAnalysisNeeded = needsVideoAnalysis && (!context.videoAnalysis || videoIsStale)
     console.log(`[Gather] Video analysis needed: ${videoAnalysisNeeded} (has analysis: ${!!context.videoAnalysis}, age: ${videoAge.toFixed(1)}s)`)
-    
+
     // If video analysis is needed, analyze video immediately with good Gemini model
     let freshVideoAnalysis = null
     if (videoAnalysisNeeded) {
       // Check if we have a recent video frame (frontend sends it periodically)
       // For now, we'll trigger analysis request - frontend should send frame when it detects "checking video" message
       // We'll use existing video frame if available, or wait for next one
-      
+
       // For immediate response, we'll say "checking" and analyze async
       // But Twilio webhooks need immediate response, so we'll do it synchronously
       // Note: This will add 2-3 seconds delay, but operator will understand
-      
+
       // Return immediately with "checking" message if we need to analyze
       // Frontend will send video frame via update-video when it detects this
       // For now, let's do it synchronously - the delay is acceptable for accuracy
@@ -593,16 +593,16 @@ router.post('/gather/:callId', async (req, res) => {
     // Generate AI response
     let aiResponse = "I understand. The emergency services have been notified with the caller's information."
     let needsToAnalyzeVideo = false
-    
+
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai')
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-      
+
       const callerInfo = `${context.userName} at ${context.location?.address || 'unknown location'}`
-      
+
       // Build context string from user data
       let contextInfo = `Caller: ${context.userName}, Location: ${context.location?.address || 'unknown'}`
-      
+
       if (context.userData?.medical) {
         const med = context.userData.medical
         if (med.blood_type) contextInfo += `, Blood Type: ${med.blood_type}`
@@ -610,35 +610,35 @@ router.post('/gather/:callId', async (req, res) => {
         if (med.medications) contextInfo += `, Medications: ${med.medications}`
         if (med.conditions) contextInfo += `, Medical Conditions: ${med.conditions}`
       }
-      
+
       if (context.userData?.contacts && context.userData.contacts.length > 0) {
         const contactNames = context.userData.contacts.map(c => c.name || c.phone).join(', ')
         contextInfo += `, Emergency Contacts: ${contactNames}`
       }
-      
+
       if (context.situation && context.situation !== 'Emergency situation - caller may be in danger') {
         contextInfo += `, Situation: ${context.situation}`
       }
-      
+
       // Check if operator is ending the conversation
       const endingPhrases = ['thank you', 'help is on the way', 'we are coming', 'assistance is coming', 'okay', 'ok', 'got it', 'understood', 'goodbye', 'bye']
       const isEnding = endingPhrases.some(phrase => userInput.toLowerCase().includes(phrase))
-      
+
       // If question needs video and we don't have fresh analysis, analyze video now
       if (videoAnalysisNeeded) {
         // Check if we have a recent video frame stored (from frontend updates)
         const latestFrame = context.latestVideoFrame
         const latestFrameTime = context.latestVideoFrameTime ? new Date(context.latestVideoFrameTime) : null
         const frameAge = latestFrameTime ? (Date.now() - latestFrameTime.getTime()) / 1000 : Infinity
-        
+
         // Check if we have a video frame (use even if slightly old - up to 15 seconds)
         if (latestFrame && frameAge < 15) {
           // We have a recent video frame - analyze it now synchronously (takes 2-3 seconds)
           console.log(`[Gather] Analyzing video frame on-demand for question: "${userInput.substring(0, 50)}" (frame age: ${frameAge.toFixed(1)}s)`)
-          
+
           try {
             const videoAnalysis = await analyzeVideoFrameWithGemini(latestFrame)
-            
+
             if (videoAnalysis) {
               // Update context with fresh analysis
               context.videoAnalysis = videoAnalysis
@@ -661,16 +661,16 @@ router.post('/gather/:callId', async (req, res) => {
           // Continue with response generation - AI will say it can't access video right now
         }
       }
-      
+
       // Use text-only model for quick responses (when video not needed)
-      const model = genAI.getGenerativeModel({ 
+      const model = genAI.getGenerativeModel({
         model: 'gemma-3-4b-it',
         generationConfig: {
           maxOutputTokens: 50,
           temperature: 0.3,
         }
       })
-      
+
       let prompt
       if (isEnding) {
         prompt = `You are a 9111 AI assistant. The operator just said: "${userInput}"
@@ -684,7 +684,7 @@ You:`
         // Include video analysis if available and relevant
         let videoContext = ''
         // Note: justAnalyzedVideo will be checked after video analysis completes
-        
+
         if (needsVideoAnalysis) {
           if (context.videoAnalysis) {
             // We have video analysis (just analyzed or from before)
@@ -694,7 +694,7 @@ You:`
             videoContext = `\n\nThe operator asked about what's visible, but video analysis could not be completed. Say you cannot access the video feed right now.`
           }
         }
-        
+
         let responseInstruction = ''
         if (needsVideoAnalysis) {
           if (context.videoAnalysis) {
@@ -707,7 +707,7 @@ You:`
         } else {
           responseInstruction = 'If you don\'t know something, say so.'
         }
-        
+
         prompt = `You are a 9111 AI assistant speaking on behalf of ${callerInfo} who cannot talk.
 CONTEXT: ${contextInfo}${videoContext}
 
@@ -724,21 +724,21 @@ Respond now:`
       console.log(`[Gather] Generating response with prompt (first 300 chars):`, prompt.substring(0, 300))
       const result = await model.generateContent(prompt)
       aiResponse = result.response.text().trim().split('\n')[0].substring(0, 250)
-      
+
       // If we just analyzed video but response doesn't seem to use it, add it explicitly
       const justAnalyzedVideo = videoAnalysisNeeded && context.videoAnalysis && context.lastVideoUpdate
       if (justAnalyzedVideo && context.videoAnalysis) {
         // Check if response actually uses the video analysis
         const responseLower = aiResponse.toLowerCase()
         const hasVideoKeywords = responseLower.includes('see') || responseLower.includes('check') || responseLower.includes('video') || responseLower.includes('visible') || responseLower.includes('look')
-        
+
         if (!hasVideoKeywords || aiResponse.length < 20) {
           console.warn(`[Gather] Response doesn't seem to include video analysis properly, adding it explicitly`)
           // Fallback: Use video analysis directly
           aiResponse = `Let me check the video... ${context.videoAnalysis.substring(0, 150)}`
         }
       }
-      
+
       console.log(`[Gather] Generated response: ${aiResponse.substring(0, 150)}`)
     } catch (e) {
       console.error('[Gather] AI response generation failed:', e.message, e.stack)
@@ -782,9 +782,9 @@ Respond now:`
 router.post('/call-status/:callId', (req, res) => {
   const { callId } = req.params
   const { CallStatus, CallDuration } = req.body
-  
+
   console.log(`Call ${callId} status: ${CallStatus}`)
-  
+
   // Find the call by callId
   for (const [userId, callData] of activeEmergencyCalls) {
     if (callData.callId === callId) {
@@ -797,7 +797,7 @@ router.post('/call-status/:callId', (req, res) => {
       break
     }
   }
-  
+
   res.status(200).send('OK')
 })
 
@@ -842,7 +842,7 @@ router.post('/end', authenticateToken, async (req, res) => {
   }
 
   callData.status = 'ended'
-  
+
   console.log('Emergency call ended:', {
     callId: callData.callId,
     duration: Date.now() - new Date(callData.context.startTime).getTime(),
@@ -885,9 +885,9 @@ router.post('/ai-response', authenticateToken, async (req, res) => {
     // Build prompt for Gemini
     const { GoogleGenerativeAI } = await import('@google/generative-ai')
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    
+
     // Use optimized model config
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
       model: 'gemma-3-4b-it',
       generationConfig: {
         maxOutputTokens: 100,
@@ -904,7 +904,7 @@ router.post('/ai-response', authenticateToken, async (req, res) => {
     // Check if operator is ending the conversation
     const endingPhrases = ['thank you', 'help is on the way', 'we are coming', 'assistance is coming', 'okay', 'ok', 'got it', 'understood', 'goodbye', 'bye', 'will send help', 'help coming']
     const isEnding = endingPhrases.some(phrase => operatorMessage.toLowerCase().includes(phrase))
-    
+
     let prompt
     if (isEnding) {
       prompt = `You are an AI emergency assistant on a 9111 call.
@@ -944,7 +944,7 @@ Respond as the AI assistant speaking to the 9111 operator:`
 
     // If we have a video frame, analyze it too
     let parts = [{ text: prompt }]
-    
+
     if (videoFrame) {
       // Video frame is base64 encoded
       try {
@@ -1006,15 +1006,15 @@ router.post('/update-video', authenticateToken, async (req, res) => {
     // This saves API costs - analysis happens only when needed
     callData.context.latestVideoFrame = videoFrame // Store frame for on-demand analysis
     callData.context.latestVideoFrameTime = new Date().toISOString()
-    
+
     console.log(`[Update Video] Stored video frame for call ${callData.callId}, timestamp: ${callData.context.latestVideoFrameTime}`)
-    
+
     // Don't analyze automatically - only analyze on-demand when operator asks video questions
     // Return success without analysis to save costs
     let analysis = null
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       analysis,
       timestamp: callData.context.lastVideoUpdate
     })
@@ -1053,7 +1053,7 @@ router.post('/synthesize-speech', authenticateToken, async (req, res) => {
   try {
     const { text } = req.body
     const elevenLabsKey = process.env.ELEVENLABS_API_KEY
-    
+
     if (!elevenLabsKey) {
       return res.status(400).json({ error: 'ElevenLabs not configured' })
     }
@@ -1081,7 +1081,7 @@ router.post('/synthesize-speech', authenticateToken, async (req, res) => {
     }
 
     const audioBuffer = await response.arrayBuffer()
-    
+
     res.set('Content-Type', 'audio/mpeg')
     res.send(Buffer.from(audioBuffer))
 
@@ -1103,7 +1103,7 @@ router.post('/analyze-video-twelvelabs', authenticateToken, async (req, res) => 
     }
 
     // Notify that analysis is starting
-    res.json({ 
+    res.json({
       status: 'processing',
       message: 'Video analysis started. This may take 30-60 seconds...'
     })
@@ -1113,26 +1113,26 @@ router.post('/analyze-video-twelvelabs', authenticateToken, async (req, res) => 
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true })
     }
-    
+
     const filename = `emergency_${userId}_${Date.now()}.webm`
     const filepath = path.join(uploadsDir, filename)
-    
+
     // Decode base64 and save
     const videoBuffer = Buffer.from(videoData.replace(/^data:video\/\w+;base64,/, ''), 'base64')
     fs.writeFileSync(filepath, videoBuffer)
-    
+
     console.log('Saved video for TwelveLabs analysis:', filepath)
 
     // Run TwelveLabs analysis
     const analysis = await quickAnalyzeVideo(filepath)
-    
+
     if (analysis) {
       // Update call context if there's an active call
       if (callData) {
         const analysisText = analysis.analysis || analysis.summary || JSON.stringify(analysis.gist)
         callData.context.videoAnalysis = analysisText
         callData.context.lastVideoUpdate = new Date().toISOString()
-        
+
         // Add to transcript
         callData.transcript.push({
           role: 'system',
@@ -1142,8 +1142,8 @@ router.post('/analyze-video-twelvelabs', authenticateToken, async (req, res) => 
       }
 
       // Clean up temp file
-      try { fs.unlinkSync(filepath) } catch (e) {}
-      
+      try { fs.unlinkSync(filepath) } catch (e) { }
+
       return // Already sent response
     } else {
       console.error('TwelveLabs analysis returned null')
@@ -1160,11 +1160,11 @@ router.post('/analyze-video-twelvelabs', authenticateToken, async (req, res) => 
 router.get('/video-analysis-status', authenticateToken, (req, res) => {
   const userId = req.user.id
   const callData = activeEmergencyCalls.get(userId)
-  
+
   if (!callData) {
     return res.json({ status: 'no_call', analysis: null })
   }
-  
+
   res.json({
     status: callData.context.videoAnalysis ? 'ready' : 'pending',
     analysis: callData.context.videoAnalysis,
@@ -1179,20 +1179,26 @@ router.post('/call-safety-contacts', authenticateToken, async (req, res) => {
     const userId = req.user.id
 
     if (!reason) {
+      console.log('[Safety Call] Missing reason')
       return res.status(400).json({ error: 'Reason for call is required' })
     }
 
+    console.log(`[Safety Call] Initiating call for user ${userId}. Reason: ${reason}`)
+
     // Get user info
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
-    
+
     // Get safety contacts (notify_on_stream = 1 or type = 'emergency')
     const contacts = db.prepare(
       "SELECT * FROM contacts WHERE user_id = ? AND (notify_on_stream = 1 OR type = 'emergency') AND phone IS NOT NULL"
     ).all(userId)
 
     if (contacts.length === 0) {
+      console.log('[Safety Call] No contacts found')
       return res.status(400).json({ error: 'No safety contacts found with phone numbers' })
     }
+
+    console.log(`[Safety Call] Found ${contacts.length} contacts to call:`, contacts.map(c => c.name))
 
     // Get user's medical info
     const medicalInfo = db.prepare('SELECT * FROM medical_info WHERE user_id = ?').get(userId)
@@ -1210,15 +1216,16 @@ router.post('/call-safety-contacts', authenticateToken, async (req, res) => {
     const twilioNumber = process.env.TWILIO_PHONE_NUMBER
 
     if (!twilioClient || !twilioNumber) {
+      console.error('[Safety Call] Twilio not configured')
       return res.status(503).json({ error: 'Twilio not configured. Cannot make calls.' })
     }
 
-    const locationStr = location?.address || 
+    const locationStr = location?.address ||
       (location?.lat ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : 'Location unknown')
 
     // Build context info string for AI
     let contextInfo = `Calling about: ${user.name || 'the user'}. Reason: ${reason}. Location: ${locationStr}`
-    
+
     if (medicalInfo) {
       if (medicalInfo.blood_type) contextInfo += `, Blood Type: ${medicalInfo.blood_type}`
       if (medicalInfo.allergies) contextInfo += `, Allergies: ${JSON.parse(medicalInfo.allergies || '[]').join(', ')}`
@@ -1237,7 +1244,7 @@ router.post('/call-safety-contacts', authenticateToken, async (req, res) => {
     for (const contact of contacts) {
       try {
         const callId = `safety_${Date.now()}_${userId}_${contact.id}`
-        
+
         // Build message for this contact (using ElevenLabs TTS if available)
         const message = `Hello, this is an AI assistant calling on behalf of ${user.name || 'someone'}. 
 ${reason}. 
@@ -1248,7 +1255,7 @@ I can answer any questions you have. How can I help?`
         const messageSpeech = await generateSpeechTwiML(message, callId)
         const gatherPrompt = "Please tell me your questions and I will try to help."
         const gatherSpeech = await generateSpeechTwiML(gatherPrompt, callId)
-        
+
         const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${messageSpeech}
@@ -1324,7 +1331,7 @@ router.post('/gather-safety/:callId', async (req, res) => {
     const { callId } = req.params
     const { SpeechResult, Confidence, Digits } = req.body
     const isTimeout = req.query.timeout === 'true'
-    
+
     console.log(`Safety gather received for ${callId}:`, { SpeechResult, Confidence, Digits, isTimeout })
 
     const callData = activeSafetyContactCalls.get(callId)
@@ -1370,11 +1377,11 @@ router.post('/gather-safety/:callId', async (req, res) => {
 
     // Generate AI response using context
     let aiResponse = "I understand. Thank you for the information."
-    
+
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai')
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-      const model = genAI.getGenerativeModel({ 
+      const model = genAI.getGenerativeModel({
         model: 'gemma-3-4b-it',
         generationConfig: {
           maxOutputTokens: 50,
@@ -1385,7 +1392,7 @@ router.post('/gather-safety/:callId', async (req, res) => {
       // Check if contact is ending the conversation
       const endingPhrases = ['thank you', 'got it', 'okay', 'ok', 'understood', 'will help', 'on my way', 'goodbye', 'bye']
       const isEnding = endingPhrases.some(phrase => userInput.toLowerCase().includes(phrase))
-      
+
       let prompt
       if (isEnding) {
         prompt = `You are an AI assistant calling ${context.contactName} about ${context.userName}'s safety.
@@ -1447,9 +1454,9 @@ You:`
 router.post('/call-status-safety/:callId', (req, res) => {
   const { callId } = req.params
   const { CallStatus, CallDuration } = req.body
-  
+
   console.log(`Safety call ${callId} status: ${CallStatus}`)
-  
+
   const callData = activeSafetyContactCalls.get(callId)
   if (callData) {
     if (CallStatus === 'completed' || CallStatus === 'failed' || CallStatus === 'busy' || CallStatus === 'no-answer') {
@@ -1459,7 +1466,7 @@ router.post('/call-status-safety/:callId', (req, res) => {
       }, 300000)
     }
   }
-  
+
   res.status(200).send('OK')
 })
 

@@ -85,6 +85,36 @@
   text-align: center;
 }
 
+.start-call-now-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 18px 24px;
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+.start-call-now-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
+}
+
+.start-call-now-btn:active {
+  transform: translateY(0);
+}
+
 .schedule-options {
   display: flex;
   gap: 10px;
@@ -474,4 +504,3 @@
 .modal-actions .btn {
   flex: 1;
 }
-

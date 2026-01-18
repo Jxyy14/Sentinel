@@ -13,6 +13,7 @@ import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
 import TripPage from './pages/TripPage'
 import IncidentMapPage from './pages/IncidentMapPage'
+import SafetyScorePage from './pages/SafetyScorePage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -46,6 +47,7 @@ function AppRoutes() {
         <Route path="/settings" element={<PrivateRoute><SettingsPage /></PrivateRoute>} />
         <Route path="/trip" element={<PrivateRoute><TripPage /></PrivateRoute>} />
         <Route path="/incident-map" element={<PrivateRoute><IncidentMapPage /></PrivateRoute>} />
+        <Route path="/safety-score" element={<PrivateRoute><SafetyScorePage /></PrivateRoute>} />
       </Routes>
       {user && <BottomNav />}
       {user && voiceListening && (

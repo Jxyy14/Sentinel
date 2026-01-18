@@ -273,15 +273,11 @@ export default function SettingsPage() {
             <span>Trip Tracker</span>
             <ChevronRight size={18} />
           </button>
-          <button className="nav-card" onClick={() => { }}>
-            <HelpCircle size={20} />
-            <span>How It Works</span>
-            <ChevronRight size={18} />
-          </button>
+
         </div>
       </section>
 
-      <p className="version-info">SAFESTREAM v2.0.0</p>
+      <p className="version-info">SENTINEL v2.0.0</p>
     </div>
   )
 }

@@ -3,12 +3,12 @@ import { Phone, PhoneOff, Mic, MicOff, AlertTriangle, MapPin, Loader, Send, X, S
 import api from '../services/api'
 import './EmergencyCallModal.css'
 
-export default function EmergencyCallModal({ 
-  isOpen, 
-  onClose, 
-  location, 
+export default function EmergencyCallModal({
+  isOpen,
+  onClose,
+  location,
   videoRef,
-  onCallStatusChange 
+  onCallStatusChange
 }) {
   const [callStatus, setCallStatus] = useState('idle') // idle, connecting, active, ended
   const [callId, setCallId] = useState(null)
@@ -23,7 +23,7 @@ export default function EmergencyCallModal({
   const [lastVideoAnalysis, setLastVideoAnalysis] = useState(null)
   const [callType, setCallType] = useState(null)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  
+
   const transcriptEndRef = useRef(null)
   const timerRef = useRef(null)
   const videoAnalysisRef = useRef(null)
@@ -84,14 +84,14 @@ export default function EmergencyCallModal({
       if (!canvasRef.current) {
         canvasRef.current = document.createElement('canvas')
       }
-      
+
       const canvas = canvasRef.current
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
-      
+
       const ctx = canvas.getContext('2d')
       ctx.drawImage(video, 0, 0)
-      
+
       // Convert to base64 JPEG
       return canvas.toDataURL('image/jpeg', 0.7)
     } catch (e) {
@@ -111,7 +111,7 @@ export default function EmergencyCallModal({
     try {
       // Send frame to backend - it will store it and analyze on-demand when needed
       const result = await api.updateEmergencyVideo({ videoFrame: frame })
-      
+
       // Backend will analyze automatically only if needed (on-demand), or just store frame
       // Don't add to transcript here - analysis happens when operator asks video questions
       if (result.analysis) {
@@ -130,7 +130,7 @@ export default function EmergencyCallModal({
   // Text-to-speech for AI responses
   const speakText = async (text) => {
     if (isMuted) return
-    
+
     setIsSpeaking(true)
     try {
       const response = await fetch(`${getApiBase()}/api/emergency/synthesize-speech`, {
@@ -146,17 +146,17 @@ export default function EmergencyCallModal({
         const audioBlob = await response.blob()
         const audioUrl = URL.createObjectURL(audioBlob)
         const audio = new Audio(audioUrl)
-        
+
         audio.onended = () => {
           setIsSpeaking(false)
           URL.revokeObjectURL(audioUrl)
         }
-        
+
         audio.onerror = () => {
           setIsSpeaking(false)
           URL.revokeObjectURL(audioUrl)
         }
-        
+
         await audio.play()
       } else {
         setIsSpeaking(false)
@@ -199,12 +199,12 @@ export default function EmergencyCallModal({
         setCallId(response.callId)
         setCallStatus('active')
         setCallType(response.callType)
-        
+
         // Add initial messages to transcript
         setTranscript([
           {
             role: 'system',
-            content: response.callType === 'real' 
+            content: response.callType === 'real'
               ? `Real phone call connected to: ${response.testNumber}`
               : `Simulated call (Twilio not configured) - Test number: ${response.testNumber}`,
             timestamp: new Date().toISOString()
@@ -229,7 +229,7 @@ export default function EmergencyCallModal({
     } catch (err) {
       console.error('Call error:', err)
       const errorMsg = err.message || 'Failed to initiate call'
-      
+
       // If call already in progress, offer to reset
       if (errorMsg.includes('already in progress')) {
         setError('Previous call still active. Click "Reset" to clear it.')
@@ -259,7 +259,7 @@ export default function EmergencyCallModal({
     } catch (e) {
       console.log('End call error:', e)
     }
-    
+
     setCallStatus('ended')
     if (timerRef.current) clearInterval(timerRef.current)
     if (videoAnalysisRef.current) clearInterval(videoAnalysisRef.current)
@@ -282,16 +282,16 @@ export default function EmergencyCallModal({
     try {
       // Capture current video frame to send with response
       const videoFrame = captureVideoFrame()
-      
+
       const response = await api.getEmergencyAIResponse(message, callId, videoFrame)
-      
+
       if (response.response) {
         setTranscript(prev => [...prev, {
           role: 'ai',
           content: response.response,
           timestamp: new Date().toISOString()
         }])
-        
+
         // Speak the response
         speakText(response.response)
       }
@@ -346,12 +346,12 @@ export default function EmergencyCallModal({
               <Shield size={48} />
               <h3>AI Emergency Assistant</h3>
               <p>The AI will call emergency services and communicate on your behalf using live video analysis and your location.</p>
-              
+
               <div className="location-info">
                 <MapPin size={16} />
                 <span>
-                  {location?.address || 
-                   (location?.lat ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : 'Getting location...')}
+                  {location?.address ||
+                    (location?.lat ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : 'Getting location...')}
                 </span>
               </div>
 
@@ -378,7 +378,7 @@ export default function EmergencyCallModal({
 
               <button className="call-911-btn" onClick={initiateCall}>
                 <Phone size={24} />
-                <span>CALL 9111</span>
+                <span>CALL 911</span>
               </button>
 
               <p className="test-notice">
@@ -414,8 +414,8 @@ export default function EmergencyCallModal({
                 <span>
                   {isAnalyzingVideo ? 'Analyzing video...' : 'Video feed active'}
                 </span>
-                <button 
-                  className="analyze-now-btn" 
+                <button
+                  className="analyze-now-btn"
                   onClick={handleManualVideoAnalysis}
                   disabled={isAnalyzingVideo}
                 >
@@ -427,9 +427,9 @@ export default function EmergencyCallModal({
                 {transcript.map((msg, i) => (
                   <div key={i} className={`transcript-message ${msg.role}`}>
                     <span className="message-role">
-                      {msg.role === 'operator' ? '9111 Operator' : 
-                       msg.role === 'ai' ? 'AI Assistant' : 
-                       msg.role === 'system' ? 'System' : msg.role}
+                      {msg.role === 'operator' ? '911 Operator' :
+                        msg.role === 'ai' ? 'AI Assistant' :
+                          msg.role === 'system' ? 'System' : msg.role}
                     </span>
                     <p>{msg.content}</p>
                   </div>
@@ -451,8 +451,8 @@ export default function EmergencyCallModal({
 
               <div className="operator-input-section">
                 <p className="input-label">
-                  {callType === 'real' 
-                    ? 'Type what the 9111 operator says:' 
+                  {callType === 'real'
+                    ? 'Type what the 911 operator says:'
                     : 'Simulate operator question:'}
                 </p>
                 <div className="input-row">
@@ -464,7 +464,7 @@ export default function EmergencyCallModal({
                     placeholder="Type what the operator says..."
                     disabled={isProcessing}
                   />
-                  <button 
+                  <button
                     onClick={handleOperatorMessage}
                     disabled={!operatorInput.trim() || isProcessing}
                   >
@@ -474,7 +474,7 @@ export default function EmergencyCallModal({
               </div>
 
               <div className="call-controls">
-                <button 
+                <button
                   className={`mute-btn ${isMuted ? 'muted' : ''}`}
                   onClick={() => setIsMuted(!isMuted)}
                   title={isMuted ? 'Unmute AI voice' : 'Mute AI voice'}
@@ -494,7 +494,7 @@ export default function EmergencyCallModal({
               <CheckCircle size={48} />
               <h3>Call Ended</h3>
               <p>Duration: {formatTime(callDuration)}</p>
-              
+
               {transcript.length > 0 && (
                 <div className="transcript-summary">
                   <h4>Call Transcript</h4>
@@ -502,9 +502,9 @@ export default function EmergencyCallModal({
                     {transcript.map((msg, i) => (
                       <div key={i} className={`transcript-message ${msg.role}`}>
                         <span className="message-role">
-                          {msg.role === 'operator' ? '9111 Operator' : 
-                           msg.role === 'ai' ? 'AI Assistant' : 
-                           msg.role === 'system' ? 'System' : msg.role}
+                          {msg.role === 'operator' ? '911 Operator' :
+                            msg.role === 'ai' ? 'AI Assistant' :
+                              msg.role === 'system' ? 'System' : msg.role}
                         </span>
                         <p>{msg.content}</p>
                       </div>
@@ -526,14 +526,14 @@ export default function EmergencyCallModal({
 
 function CheckCircle({ size, className }) {
   return (
-    <svg 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
     >

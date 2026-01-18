@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Shield, Radio, LogOut, PhoneCall, Clock, Heart, Eye,
   Zap, Cloud, MapPin, Bell, Users, Video, Vibrate, Volume2, AlertTriangle,
-  Navigation, Phone, EyeOff, Map, Activity, History, ChevronRight
+  Navigation, Phone, EyeOff, Map, Activity, History, ChevronRight, Award
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
@@ -172,7 +172,7 @@ export default function HomePage() {
       <header className="home-header">
         <div className="brand">
           <Shield size={28} />
-          <span>SAFESTREAM</span>
+          <span>SENTINEL</span>
         </div>
         <div className="user-section">
           <span className="welcome">Hi, {user?.name?.split(' ')[0]}</span>
@@ -259,9 +259,7 @@ export default function HomePage() {
         <span>Call 911 for Me</span>
       </button>
 
-      <SafetyScore data={safetyData} />
-
-      <div className="grid-2 stats-grid">
+      <div className="grid-3 stats-grid">
         <button className="stat-card" onClick={() => navigate('/contacts')}>
           <Users size={24} />
           <div className="stat-info">
@@ -276,7 +274,19 @@ export default function HomePage() {
             <span className="stat-label">Saved Recordings</span>
           </div>
         </button>
+        <button className="stat-card safety-score-mini" onClick={() => navigate('/safety-score')}>
+          <Award size={24} />
+          <div className="stat-info">
+            <span className="stat-value">{safetyData.contacts >= 2 ? 20 : 0 + safetyData.hasMedical ? 15 : 0 + safetyData.safeLocations >= 1 ? 15 : 0 + safetyData.practiceRuns >= 1 ? 20 : 0 + safetyData.checkIns >= 1 ? 15 : 0 + safetyData.trips >= 1 ? 15 : 0}</span>
+            <span className="stat-label">Safety Score</span>
+          </div>
+          <div className="mini-progress-bar">
+            <div className="mini-progress-fill" style={{ width: `${(safetyData.contacts >= 2 ? 20 : 0) + (safetyData.hasMedical ? 15 : 0) + (safetyData.safeLocations >= 1 ? 15 : 0) + (safetyData.practiceRuns >= 1 ? 20 : 0) + (safetyData.checkIns >= 1 ? 15 : 0) + (safetyData.trips >= 1 ? 15 : 0)}%` }} />
+          </div>
+        </button>
       </div>
+
+
 
       <div className="activation-methods">
         <div className={`activation-item ${settings?.shake_to_activate ? 'active' : ''}`}>
@@ -295,10 +305,7 @@ export default function HomePage() {
         )}
       </div>
 
-      <div className="tip-banner">
-        <AlertTriangle size={18} />
-        <span>Pro tip: Add multiple emergency contacts for maximum safety coverage</span>
-      </div>
+
 
       {/* Safety Map Section - New Feature */}
       <div className="safety-map-section">
@@ -345,11 +352,11 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* Call 9111 for Me Modal */}
+      {/* Call 911 for Me Modal */}
       <Call911ForMeModal
         isOpen={showCall911Modal}
         onClose={() => setShowCall911Modal(false)}
       />
-    </div>
+    </div >
   )
 }

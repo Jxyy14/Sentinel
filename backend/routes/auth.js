@@ -19,7 +19,7 @@ router.post('/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10)
-    
+
     const result = db.prepare(
       'INSERT INTO users (email, password, name, phone) VALUES (?, ?, ?, ?)'
     ).run(email, hashedPassword, name, phone || null)
@@ -27,7 +27,7 @@ router.post('/register', async (req, res) => {
     const userId = result.lastInsertRowid
 
     db.prepare(
-      'INSERT INTO user_settings (user_id) VALUES (?)'
+      'INSERT INTO user_settings (user_id, enable_sound) VALUES (?, 0)'
     ).run(userId)
 
     db.prepare(
@@ -95,7 +95,19 @@ router.get('/me', authenticateToken, (req, res) => {
 
 router.put('/settings', authenticateToken, (req, res) => {
   try {
-    const { cancel_window_seconds, auto_share_with_police, show_deterrent_banner, enable_sound, quick_activation } = req.body
+    const {
+      cancel_window_seconds,
+      auto_share_with_police,
+      show_deterrent_banner,
+      enable_sound,
+      quick_activation,
+      shake_to_activate,
+      voice_activation,
+      dead_man_switch,
+      dead_man_interval,
+      dead_man_sleep_pause,
+      enable_silent_sos
+    } = req.body
 
     const updates = []
     const values = []
@@ -119,6 +131,30 @@ router.put('/settings', authenticateToken, (req, res) => {
     if (quick_activation !== undefined) {
       updates.push('quick_activation = ?')
       values.push(quick_activation ? 1 : 0)
+    }
+    if (shake_to_activate !== undefined) {
+      updates.push('shake_to_activate = ?')
+      values.push(shake_to_activate ? 1 : 0)
+    }
+    if (voice_activation !== undefined) {
+      updates.push('voice_activation = ?')
+      values.push(voice_activation ? 1 : 0)
+    }
+    if (dead_man_switch !== undefined) {
+      updates.push('dead_man_switch = ?')
+      values.push(dead_man_switch ? 1 : 0)
+    }
+    if (dead_man_interval !== undefined) {
+      updates.push('dead_man_interval = ?')
+      values.push(dead_man_interval)
+    }
+    if (dead_man_sleep_pause !== undefined) {
+      updates.push('dead_man_sleep_pause = ?')
+      values.push(dead_man_sleep_pause ? 1 : 0)
+    }
+    if (enable_silent_sos !== undefined) {
+      updates.push('enable_silent_sos = ?')
+      values.push(enable_silent_sos ? 1 : 0)
     }
 
     if (updates.length > 0) {

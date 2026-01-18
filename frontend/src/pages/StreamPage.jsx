@@ -653,7 +653,7 @@ export default function StreamPage() {
             onClick={() => setShowEmergencyCall(true)}
           >
             <Phone size={20} />
-            <span>9111</span>
+            <span>911</span>
           </button>
         </div>
       )}

@@ -38,7 +38,7 @@ export default function AuthPage() {
       <div className="auth-container">
         <div className="auth-logo">
           <Shield size={48} />
-          <h1>SAFESTREAM</h1>
+          <h1>SENTINEL</h1>
           <p>Your Safety, Always Protected</p>
         </div>
 

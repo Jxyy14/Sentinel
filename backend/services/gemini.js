@@ -8,7 +8,7 @@ const getModel = () => {
     const apiKey = process.env.GEMINI_API_KEY
     if (apiKey) {
       genAI = new GoogleGenerativeAI(apiKey)
-      model = genAI.getGenerativeModel({ model: 'gemma-3-4b-it' })
+      model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
     }
   }
   return model

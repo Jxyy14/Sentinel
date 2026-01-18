@@ -161,11 +161,12 @@
     font-family: var(--font-display);
     font-size: 1.25rem;
     letter-spacing: 2px;
+    color: #fff;
 }
 
 .btn-desc {
     font-size: 0.8rem;
-    color: var(--text-muted);
+    color: var(--text-secondary);
 }
 
 .start-trip-btn>svg {

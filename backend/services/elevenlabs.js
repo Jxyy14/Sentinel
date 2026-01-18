@@ -10,7 +10,7 @@ const UPLOADS_DIR = path.join(__dirname, '../uploads')
 
 export const generateSpeech = async (text, voiceId = '21m00Tcm4TlvDq8ikWAM') => {
     try {
-        const apiKey = process.env.ELEVENLABS_KEY
+        const apiKey = process.env.ELEVENLABS_API_KEY
         if (!apiKey) {
             console.log('ElevenLabs key missing, using mock')
             return null
@@ -20,7 +20,7 @@ export const generateSpeech = async (text, voiceId = '21m00Tcm4TlvDq8ikWAM') => 
             `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
             {
                 text,
-                model_id: 'eleven_monolingual_v1',
+                model_id: 'eleven_turbo_v2',
                 voice_settings: {
                     stability: 0.5,
                     similarity_boost: 0.5

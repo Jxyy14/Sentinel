@@ -1,6 +1,6 @@
 {
-    "name": "SafeStream",
-    "short_name": "SafeStream",
+    "name": "Sentinel",
+    "short_name": "Sentinel",
     "description": "Personal safety app with live streaming, emergency alerts, and location sharing",
     "start_url": "/",
     "display": "standalone",

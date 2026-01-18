@@ -70,9 +70,15 @@ db.exec(`
     user_id INTEGER PRIMARY KEY,
     cancel_window_seconds INTEGER DEFAULT 30,
     auto_share_with_police INTEGER DEFAULT 0,
-    show_deterrent_banner INTEGER DEFAULT 1,
-    enable_sound INTEGER DEFAULT 1,
+    show_deterrent_banner INTEGER DEFAULT 0,
+    enable_sound INTEGER DEFAULT 0,
     quick_activation INTEGER DEFAULT 1,
+    shake_to_activate INTEGER DEFAULT 0,
+    voice_activation INTEGER DEFAULT 0,
+    dead_man_switch INTEGER DEFAULT 0,
+    dead_man_interval INTEGER DEFAULT 30,
+    dead_man_sleep_pause INTEGER DEFAULT 1,
+    enable_silent_sos INTEGER DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
@@ -249,5 +255,29 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_area_safety_grid ON area_safety_scores(grid_lat, grid_lng);
 `)
 
-export default db
+// Migration: Add new settings columns to existing databases
+try {
+  db.exec(`ALTER TABLE user_settings ADD COLUMN shake_to_activate INTEGER DEFAULT 0`)
+} catch (e) { /* column already exists */ }
 
+try {
+  db.exec(`ALTER TABLE user_settings ADD COLUMN voice_activation INTEGER DEFAULT 0`)
+} catch (e) { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE user_settings ADD COLUMN dead_man_switch INTEGER DEFAULT 0`)
+} catch (e) { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE user_settings ADD COLUMN dead_man_interval INTEGER DEFAULT 30`)
+} catch (e) { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE user_settings ADD COLUMN dead_man_sleep_pause INTEGER DEFAULT 1`)
+} catch (e) { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE user_settings ADD COLUMN enable_silent_sos INTEGER DEFAULT 0`)
+} catch (e) { /* column already exists */ }
+
+export default db
