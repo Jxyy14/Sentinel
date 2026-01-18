@@ -1117,8 +1117,15 @@ router.post('/analyze-video-twelvelabs', authenticateToken, async (req, res) => 
     const filename = `emergency_${userId}_${Date.now()}.webm`
     const filepath = path.join(uploadsDir, filename)
 
-    // Decode base64 and save
-    const videoBuffer = Buffer.from(videoData.replace(/^data:video\/\w+;base64,/, ''), 'base64')
+    // Decode base64 and save - handle various MIME formats including codecs
+    // e.g., data:video/webm;codecs=vp9;base64,XXXX
+    let base64Data = videoData
+    const base64Marker = ';base64,'
+    const markerIndex = videoData.indexOf(base64Marker)
+    if (markerIndex !== -1) {
+      base64Data = videoData.substring(markerIndex + base64Marker.length)
+    }
+    const videoBuffer = Buffer.from(base64Data, 'base64')
     fs.writeFileSync(filepath, videoBuffer)
 
     console.log('Saved video for TwelveLabs analysis:', filepath)
