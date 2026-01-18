@@ -205,19 +205,13 @@ export const generateSummary = async (videoId) => {
 }
 
 // Quick analyze a video file - uploads, waits for indexing, returns analysis
+// Quick analyze a video file - uploads, waits for indexing, returns analysis
 export const quickAnalyzeVideo = async (videoFilePath) => {
     try {
-        const client = getClient()
-        if (!client) {
-            console.log('TwelveLabs not configured')
-            return null
-        }
-
+        const apiKey = process.env.TWELVELABS_KEY
+        if (!apiKey) return null
         const indexId = process.env.TWELVELABS_INDEX_ID
-        if (!indexId) {
-            console.log('TwelveLabs Index ID missing')
-            return null
-        }
+        if (!indexId) return null
 
         console.log('Quick analyzing video:', videoFilePath)
 
@@ -230,70 +224,65 @@ export const quickAnalyzeVideo = async (videoFilePath) => {
             }
         }
 
-        // Upload and create task
-        const task = await client.tasks.create({
-            indexId,
-            videoFile: fs.createReadStream(videoPath),
-            language: 'en'
-        })
+        // 1. Upload task via curl
+        const uploadCmd = `curl -s -X POST "https://api.twelvelabs.io/v1.3/tasks" \\
+            -H "x-api-key: ${apiKey}" \\
+            -H "Content-Type: multipart/form-data" \\
+            -F "index_id=${indexId}" \\
+            -F "language=en" \\
+            -F "video_file=@${videoPath}"`
 
-        console.log('Task created:', task.id)
-
-        // Wait for indexing (poll every 3 seconds, max 60 seconds)
-        let status = null
-        let videoId = null
-        const startTime = Date.now()
-        const timeout = 60000 // 60 seconds max
-
-        while (Date.now() - startTime < timeout) {
-            const taskStatus = await client.tasks.retrieve(task.id)
-            console.log('Task status:', taskStatus.status)
-
-            if (taskStatus.status === 'ready') {
-                videoId = taskStatus.videoId
-                break
-            } else if (taskStatus.status === 'failed') {
-                console.error('Task failed')
-                return null
-            }
-
-            // Wait 3 seconds before next poll
-            await new Promise(r => setTimeout(r, 3000))
-        }
-
-        if (!videoId) {
-            console.log('Indexing timed out')
+        const { stdout: uploadOut } = await execAsync(uploadCmd, { maxBuffer: 50 * 1024 * 1024 })
+        let taskId = null
+        try {
+            taskId = JSON.parse(uploadOut)._id
+        } catch (e) {
+            console.error('Failed to parse upload response')
             return null
         }
 
-        // Get quick analysis using gist
-        try {
-            const gist = await client.gist({
-                videoId,
-                types: ['topic', 'hashtag', 'title']
-            })
+        if (!taskId) return null
+        console.log('Task created:', taskId)
 
-            // Also get a detailed analysis
-            const analysis = await client.analyze({
-                videoId,
-                prompt: 'Describe what is happening in this video for a 9111 emergency call. Focus on: people, actions, any dangers or threats, injuries, and important details. Be factual and concise.'
-            })
+        // 2. Poll status via curl
+        let videoId = null
+        const startTime = Date.now()
+        const timeout = 60000
 
-            return {
-                gist: gist,
-                analysis: analysis?.data || analysis,
-                videoId
+        while (Date.now() - startTime < timeout) {
+            const statusCmd = `curl -s -X GET "https://api.twelvelabs.io/v1.3/tasks/${taskId}" -H "x-api-key: ${apiKey}"`
+            const { stdout: statusOut } = await execAsync(statusCmd)
+            const statusData = JSON.parse(statusOut)
+
+            console.log('Task status:', statusData.status)
+
+            if (statusData.status === 'ready') {
+                videoId = statusData.video_id
+                break
+            } else if (statusData.status === 'failed') {
+                console.error('Task failed')
+                return null
             }
-        } catch (e) {
-            console.error('Analysis error:', e.message)
-            // Try summarize as fallback
-            const summary = await client.summarize({
-                videoId,
-                type: 'summary',
-                prompt: 'Describe what is happening for a 9111 call. Be factual.'
-            })
-            return { summary: summary?.summary || summary?.data, videoId }
+            await new Promise(r => setTimeout(r, 3000))
         }
+
+        if (!videoId) return null
+
+        // 3. Generate summary via curl
+        const prompt = "Describe what is happening in this video for a 911 call. Focus on: people, actions, any dangers or threats, injuries, and important details. Be factual and concise."
+        const summaryCmd = `curl -s -X POST "https://api.twelvelabs.io/v1.3/summarize" \\
+            -H "x-api-key: ${apiKey}" \\
+            -H "Content-Type: application/json" \\
+            -d '{"video_id": "${videoId}", "type": "summary", "prompt": "${prompt.replace(/"/g, '\\"')}"}'`
+
+        const { stdout: summaryOut } = await execAsync(summaryCmd)
+        const summaryResult = JSON.parse(summaryOut)
+
+        return {
+            summary: summaryResult.summary || summaryResult.data,
+            videoId
+        }
+
     } catch (error) {
         console.error('Quick analyze error:', error.message)
         return null
