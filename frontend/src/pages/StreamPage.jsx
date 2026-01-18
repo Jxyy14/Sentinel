@@ -565,13 +565,7 @@ export default function StreamPage() {
         </div>
       )}
 
-      {phase === 'recording' && settings?.show_deterrent_banner && (
-        <div className="deterrent-banner">
-          <Eye size={18} />
-          <span className="live-badge">● LIVE</span>
-          <span>THIS IS BEING RECORDED & STREAMED TO AUTHORITIES</span>
-        </div>
-      )}
+
 
       <div className="video-container">
         <video
